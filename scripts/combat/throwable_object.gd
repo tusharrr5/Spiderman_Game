@@ -4,7 +4,7 @@ extends Area2D
 ## at enemies or the boss for heavy impact damage and knockback.
 
 @export var throw_speed: float = 310.0
-@export var gravity: float = 420.0
+@export var fall_gravity: float = 420.0
 @export var damage: int = 28
 @export var stun_duration: float = 0.65
 
@@ -52,7 +52,7 @@ func launch(dir_sign: float, actor: Node2D) -> void:
 func _physics_process(delta: float) -> void:
 	if not is_thrown or is_consumed:
 		return
-	velocity.y += gravity * delta
+	velocity.y += fall_gravity * delta
 	global_position += velocity * delta
 	rotation += 9.0 * delta * sign(velocity.x)
 	_lifetime += delta

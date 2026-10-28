@@ -40,8 +40,8 @@ func activate(dmg: int, knockback: Vector2, dir_sign: float, atk_name: String = 
 
 func deactivate() -> void:
 	is_active = false
-	monitoring = false
-	monitorable = false
+	set_deferred("monitoring", false)
+	set_deferred("monitorable", false)
 	_hit_registry.clear()
 
 

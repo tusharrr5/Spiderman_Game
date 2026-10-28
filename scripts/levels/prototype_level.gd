@@ -2,17 +2,24 @@ class_name PrototypeLevel
 extends Node2D
 ## Phase 1 Playable Prototype Level Controller.
 ## Coordinates Player, Normal Enemies, Throwable Objects, Web Swing Anchors, Prototype Boss,
-## Pitfall Hazard recovery, and clean single-action Level Reset without duplicating instances.
+## Pitfall Hazard recovery, independent InputDiagnosticsOverlay, and clean single-action Level Reset.
 
 @onready var player: PlayerController = $Player
 @onready var boss: PrototypeBoss = $PrototypeBoss
 @onready var hud: HudAndTouchUI = $HudAndTouchUI
 
+var diagnostics_overlay: InputDiagnosticsOverlay = null
 var _player_spawn: Vector2 = Vector2(72.0, 260.0)
 
 
 func _ready() -> void:
 	_player_spawn = player.global_position
+
+	# Instantiate independent runtime input diagnostics overlay (F3 to toggle)
+	diagnostics_overlay = InputDiagnosticsOverlay.new()
+	diagnostics_overlay.name = "InputDiagnosticsOverlay"
+	add_child(diagnostics_overlay)
+	hud.touch_button_event.connect(diagnostics_overlay.record_onscreen_button)
 
 	# Connect Player signals to HUD
 	player.health_component.health_changed.connect(hud.update_player_health)

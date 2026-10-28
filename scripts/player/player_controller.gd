@@ -95,6 +95,28 @@ var _hurt_timer: float = 0.0
 var _anim_clock: float = 0.0
 var _wall_detach_grace: float = 0.0
 
+# Buffered One-Shot Action Flags & Edge-Detection State
+# Captures both _input() hardware events AND Input.action_press() calls from on-screen buttons
+var _buf_jump_pressed: bool = false
+var _buf_jump_released: bool = false
+var _buf_punch_pressed: bool = false
+var _buf_kick_pressed: bool = false
+var _buf_web_pressed: bool = false
+var _buf_special_pressed: bool = false
+var _buf_suit_pressed: bool = false
+var _buf_down_pressed: bool = false
+var _prev_action_held: Dictionary = {
+	"jump": false,
+	"attack_punch": false,
+	"attack_kick": false,
+	"web_action": false,
+	"special_action": false,
+	"suit_toggle": false,
+	"climb_down": false
+}
+## Last physics tick's pending one-shot buffers + held axis, read by InputDiagnosticsOverlay (stage S4)
+var debug_last_input_snapshot: String = "none"
+
 # Web Swing Tether State
 var _swing_anchor: Vector2 = Vector2.ZERO
 var _swing_length: float = 95.0
@@ -123,6 +145,125 @@ func _ready() -> void:
 	_emit_ability_state()
 
 
+func _input(event: InputEvent) -> void:
+	_capture_event_into_buffers(event)
+
+
+func _capture_event_into_buffers(event: InputEvent) -> void:
+	if event.is_echo():
+		return
+	if event.is_action_pressed("jump"):
+		_buf_jump_pressed = true
+	elif event.is_action_released("jump"):
+		_buf_jump_released = true
+	if event.is_action_pressed("attack_punch"):
+		_buf_punch_pressed = true
+	if event.is_action_pressed("attack_kick"):
+		_buf_kick_pressed = true
+	if event.is_action_pressed("web_action"):
+		_buf_web_pressed = true
+	if event.is_action_pressed("special_action"):
+		_buf_special_pressed = true
+	if event.is_action_pressed("suit_toggle"):
+		_buf_suit_pressed = true
+	if event.is_action_pressed("climb_down"):
+		_buf_down_pressed = true
+
+
+func buffer_action_tap(action_name: String) -> void:
+	## Called directly by on-screen touch/mouse buttons or Input.action_press() edge detection
+	match action_name:
+		"jump":
+			_buf_jump_pressed = true
+		"attack_punch":
+			_buf_punch_pressed = true
+		"attack_kick":
+			_buf_kick_pressed = true
+		"web_action":
+			_buf_web_pressed = true
+		"special_action":
+			_buf_special_pressed = true
+		"suit_toggle":
+			_buf_suit_pressed = true
+		"climb_down":
+			_buf_down_pressed = true
+
+
+func buffer_action_release(action_name: String) -> void:
+	if action_name == "jump":
+		_buf_jump_released = true
+
+
+func _poll_action_edges() -> void:
+	## Detects rising/falling edges on Input.is_action_pressed() so programmatic Input.action_press()
+	## calls made during _process / GUI button_down (when Engine.is_in_physics_frame() is false)
+	## reliably trigger discrete gameplay actions on the very next physics tick.
+	for act_key in _prev_action_held.keys():
+		var action_name: String = act_key as String
+		var now_held: bool = Input.is_action_pressed(action_name)
+		var was_held: bool = _prev_action_held[action_name] as bool
+		if now_held and not was_held:
+			buffer_action_tap(action_name)
+		elif not now_held and was_held:
+			buffer_action_release(action_name)
+		_prev_action_held[action_name] = now_held
+
+
+func _snapshot_input_for_diagnostics() -> void:
+	var parts: PackedStringArray = []
+	if _buf_jump_pressed: parts.append("jump")
+	if _buf_jump_released: parts.append("jump_rel")
+	if _buf_punch_pressed: parts.append("punch")
+	if _buf_kick_pressed: parts.append("kick")
+	if _buf_web_pressed: parts.append("web")
+	if _buf_special_pressed: parts.append("special")
+	if _buf_suit_pressed: parts.append("suit")
+	if _buf_down_pressed: parts.append("down")
+	var move_x := Input.get_axis("move_left", "move_right")
+	if parts.is_empty() and absf(move_x) < 0.05:
+		return
+	debug_last_input_snapshot = "tick%d [%s] axis=%.2f" % [Engine.get_physics_frames(), ",".join(parts), move_x]
+
+
+func _clear_input_buffers() -> void:
+	_buf_jump_pressed = false
+	_buf_jump_released = false
+	_buf_punch_pressed = false
+	_buf_kick_pressed = false
+	_buf_web_pressed = false
+	_buf_special_pressed = false
+	_buf_suit_pressed = false
+	_buf_down_pressed = false
+
+
+func _is_jump_just_pressed() -> bool:
+	return _buf_jump_pressed or Input.is_action_just_pressed("jump")
+
+
+func _is_jump_just_released() -> bool:
+	return _buf_jump_released or Input.is_action_just_released("jump")
+
+
+func _is_punch_just_pressed() -> bool:
+	return _buf_punch_pressed or Input.is_action_just_pressed("attack_punch")
+
+
+func _is_kick_just_pressed() -> bool:
+	return _buf_kick_pressed or Input.is_action_just_pressed("attack_kick")
+
+
+func _is_web_just_pressed() -> bool:
+	return _buf_web_pressed or Input.is_action_just_pressed("web_action")
+
+
+func _is_special_just_pressed() -> bool:
+	return _buf_special_pressed or Input.is_action_just_pressed("special_action")
+
+
+func _is_down_just_pressed() -> bool:
+	return _buf_down_pressed or Input.is_action_just_pressed("climb_down")
+
+
 func reset_player(target_pos: Vector2) -> void:
 	global_position = target_pos
 	velocity = Vector2.ZERO
@@ -135,6 +276,9 @@ func reset_player(target_pos: Vector2) -> void:
 	_combo_reset_timer = 0.0
 	_hurt_timer = 0.0
 	_wall_detach_grace = 0.0
+	_clear_input_buffers()
+	for k in _prev_action_held.keys():
+		_prev_action_held[k] = false
 	web_line.visible = false
 	melee_hitbox.deactivate()
 	health_component.reset_health()
@@ -144,10 +288,13 @@ func reset_player(target_pos: Vector2) -> void:
 
 func _physics_process(delta: float) -> void:
 	_anim_clock += delta
+	_poll_action_edges()
+	_snapshot_input_for_diagnostics()
 	_update_cooldowns(delta)
 
 	# Suit palette toggle ('C' or HUD button)
-	if Input.is_action_just_pressed("suit_toggle") and current_state != State.DEFEATED:
+	if (_buf_suit_pressed or Input.is_action_just_pressed("suit_toggle")) and current_state != State.DEFEATED:
+		_buf_suit_pressed = false
 		toggle_suit_palette()
 
 	match current_state:
@@ -172,6 +319,7 @@ func _physics_process(delta: float) -> void:
 		State.DEFEATED:
 			_state_defeated(delta)
 
+	_clear_input_buffers()
 	_update_sprite_animation()
 
 
@@ -275,7 +423,7 @@ func _state_jumping(delta: float) -> void:
 	_handle_air_horizontal(delta)
 
 	# Variable jump height when Jump is released early
-	if Input.is_action_just_released("jump") and velocity.y < -80.0:
+	if _is_jump_just_released() and velocity.y < -80.0:
 		velocity.y *= JUMP_CUT_MULTIPLIER
 
 	if _check_combat_or_web_inputs():
@@ -321,9 +469,9 @@ func _state_wall_climbing(delta: float) -> void:
 	velocity.y = climb_axis * WALL_CLIMB_SPEED
 
 	# Wall jump away or upward
-	if Input.is_action_just_pressed("jump"):
+	if _is_jump_just_pressed():
 		_wall_detach_grace = 0.22
-		var jump_dir := _wall_normal_x if abs(move_x) < 0.1 else sign(move_x)
+		var jump_dir: float = _wall_normal_x if absf(move_x) < 0.1 else signf(move_x)
 		_set_facing(jump_dir)
 		velocity = Vector2(jump_dir * MAX_RUN_SPEED * 0.95, JUMP_VELOCITY * 0.95)
 		_play_sfx(sfx_jump)
@@ -369,7 +517,7 @@ func _state_ceiling_crawling(delta: float) -> void:
 		_set_facing(move_x)
 
 	# Explicit detachment via Down ('S'/Down) or Jump ('Space')
-	if Input.is_action_just_pressed("climb_down") or Input.is_action_just_pressed("jump"):
+	if _is_down_just_pressed() or _is_jump_just_pressed():
 		velocity.y = 45.0
 		_wall_detach_grace = 0.25
 		_transition_to(State.FALLING)
@@ -417,7 +565,7 @@ func _state_web_swinging(delta: float) -> void:
 	web_line.add_point(to_local(_swing_anchor))
 
 	# Release web and preserve momentum on Jump or second Web press
-	if Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("web_action"):
+	if _is_jump_just_pressed() or _is_web_just_pressed():
 		web_line.visible = false
 		velocity = Vector2(velocity.x * WEB_RELEASE_BOOST.x, min(velocity.y * WEB_RELEASE_BOOST.y, -225.0))
 		_play_sfx(sfx_jump)
@@ -433,7 +581,12 @@ func _state_web_swinging(delta: float) -> void:
 
 func _state_attacking(delta: float) -> void:
 	_apply_gravity(delta)
-	velocity.x = move_toward(velocity.x, 0.0, GROUND_DECEL * 0.75 * delta)
+	var move_x := Input.get_axis("move_left", "move_right")
+	if absf(move_x) > 0.05:
+		_set_facing(move_x)
+		velocity.x = move_toward(velocity.x, move_x * MAX_RUN_SPEED * 0.55, GROUND_ACCEL * 0.6 * delta)
+	else:
+		velocity.x = move_toward(velocity.x, 0.0, GROUND_DECEL * 0.75 * delta)
 	_attack_elapsed += delta
 
 	# Activate hitbox strictly within active window
@@ -448,10 +601,10 @@ func _state_attacking(delta: float) -> void:
 
 	# Allow queuing next chained combo step during the back half of current attack
 	if _attack_elapsed >= _attack_hitbox_start:
-		if Input.is_action_just_pressed("attack_punch") and _combo_step == 1:
+		if _is_punch_just_pressed() and _combo_step == 1:
 			_start_melee_attack(2)
 			return
-		elif (Input.is_action_just_pressed("attack_kick") or Input.is_action_just_pressed("attack_punch")) and _combo_step == 2:
+		elif (_is_kick_just_pressed() or _is_punch_just_pressed()) and _combo_step == 2:
 			_start_melee_attack(3)
 			return
 
@@ -484,7 +637,8 @@ func _state_defeated(delta: float) -> void:
 func _try_jump_from_ground() -> bool:
 	if not is_on_floor():
 		return false
-	if Input.is_action_just_pressed("jump"):
+	if _is_jump_just_pressed():
+		_buf_jump_pressed = false
 		# Super Jump when holding Up ('W'/Up Arrow) + Jump while off cooldown
 		if Input.is_action_pressed("climb_up") and _super_jump_cd <= 0.0:
 			velocity.y = SUPER_JUMP_VELOCITY
@@ -528,7 +682,7 @@ func _try_attach_ceiling() -> bool:
 
 func _check_combat_or_web_inputs() -> bool:
 	# 1. Punch / Chained Combo ('J')
-	if Input.is_action_just_pressed("attack_punch"):
+	if _is_punch_just_pressed():
 		var next_step := 1
 		if _combo_reset_timer > 0.0 and _combo_step in [1, 2]:
 			next_step = _combo_step + 1
@@ -536,20 +690,20 @@ func _check_combat_or_web_inputs() -> bool:
 		return true
 
 	# 2. Kick ('H')
-	if Input.is_action_just_pressed("attack_kick"):
+	if _is_kick_just_pressed():
 		var kick_step := 3 if (_combo_reset_timer > 0.0 and _combo_step >= 1) else 0
 		_start_melee_attack(kick_step)
 		return true
 
 	# 3. Web Action ('K'): Swing if airborne or holding Up near an overhead anchor; otherwise fire Web Projectile
-	if Input.is_action_just_pressed("web_action"):
+	if _is_web_just_pressed():
 		if (not is_on_floor() or Input.is_action_pressed("climb_up")) and _try_start_web_swing():
 			return true
 		_fire_web_projectile()
 		return true
 
 	# 4. Special Move or Object Throw ('L')
-	if Input.is_action_just_pressed("special_action"):
+	if _is_special_just_pressed():
 		if _try_throw_nearby_object():
 			return true
 		if _special_cd <= 0.0:
@@ -563,6 +717,8 @@ func _start_melee_attack(step: int) -> void:
 	_combo_step = step
 	_combo_reset_timer = COMBO_WINDOW
 	_attack_elapsed = 0.0
+	_buf_punch_pressed = false
+	_buf_kick_pressed = false
 
 	if step == 1:
 		_pending_damage = 14
@@ -620,6 +776,7 @@ func _start_special_web_slam() -> void:
 	_emit_ability_state()
 	_combo_step = 0
 	_attack_elapsed = 0.0
+	_buf_special_pressed = false
 	_pending_damage = 34
 	_pending_kb = Vector2(280.0, -160.0)
 	_pending_attack_id = "web_slam_special"
@@ -635,6 +792,7 @@ func _start_special_web_slam() -> void:
 
 
 func _fire_web_projectile() -> void:
+	_buf_web_pressed = false
 	if web_projectile_scene == null or get_parent() == null:
 		return
 	var proj := web_projectile_scene.instantiate() as WebProjectile
@@ -656,6 +814,7 @@ func _try_throw_nearby_object() -> bool:
 					best_dist = d
 					best_obj = tobj
 	if best_obj != null:
+		_buf_special_pressed = false
 		best_obj.launch(facing_dir, self)
 		_play_sfx(sfx_web)
 		_trigger_particles(Color(0.95, 0.80, 0.45, 1.0))
@@ -677,6 +836,7 @@ func _try_start_web_swing() -> bool:
 					best_dist = d
 					best_anchor = anchor
 	if best_anchor != null:
+		_buf_web_pressed = false
 		_swing_anchor = best_anchor.global_position
 		_swing_length = clamp(best_dist, 48.0, 145.0)
 		if is_on_floor():
