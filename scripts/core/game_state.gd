@@ -75,7 +75,17 @@ var arena_tier: int = 1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_set_display_title()
 	load_game()
+
+
+## config/name keeps its old value because it decides the desktop user:// (save) folder; show the real title instead.
+func _set_display_title() -> void:
+	const TITLE := "Web-Slinger: Night Patrol"
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("document.title = '%s'" % TITLE)
+	elif DisplayServer.get_name() != "headless":
+		get_window().title = TITLE
 
 
 # ------------------------------------------------------------------ persistence

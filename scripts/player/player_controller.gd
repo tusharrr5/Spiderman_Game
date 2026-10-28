@@ -1,6 +1,6 @@
 class_name PlayerController
 extends CharacterBody2D
-## Spider-Man-inspired 2D Action-Platformer Player Controller (Phase 1 Prototype)
+## Spider-Man-inspired 2D Action-Platformer Player Controller (story heroes and versus fighters)
 ## Implements an explicit finite state machine covering:
 ## IDLE, RUNNING, JUMPING, FALLING, WALL_CLIMBING, CEILING_CRAWLING, WEB_SWINGING, ATTACKING, HURT, DEFEATED, DODGING,
 ## BLOCKING, plus a fighting-game layer: guard + timed parry, hold-to-heavy, dash strike, a 3-bar power meter
