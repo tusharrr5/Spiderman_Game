@@ -80,12 +80,11 @@ func _ready() -> void:
 
 
 ## config/name keeps its old value because it decides the desktop user:// (save) folder; show the real title instead.
+## Waits a frame because the engine applies config/name to the window (and the web page title) after autoloads start.
 func _set_display_title() -> void:
-	const TITLE := "Web-Slinger: Night Patrol"
-	if OS.has_feature("web"):
-		JavaScriptBridge.eval("document.title = '%s'" % TITLE)
-	elif DisplayServer.get_name() != "headless":
-		get_window().title = TITLE
+	await get_tree().process_frame
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_title("Web-Slinger: Night Patrol")
 
 
 # ------------------------------------------------------------------ persistence
