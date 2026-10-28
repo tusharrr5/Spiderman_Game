@@ -1,0 +1,268 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scripts/levels/prototype_level.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/normal_enemy.tscn" id="3_enemy"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/prototype_boss.tscn" id="4_boss"]
+[ext_resource type="PackedScene" path="res://scenes/objects/throwable_object.tscn" id="5_crate"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud_and_touch.tscn" id="6_hud"]
+[ext_resource type="Texture2D" path="res://assets/sprites/web_anchor.png" id="7_anchor"]
+
+[sub_resource type="RectangleShape2D" id="Shape_RooftopA"]
+size = Vector2(460, 40)
+
+[sub_resource type="RectangleShape2D" id="Shape_LeftBound"]
+size = Vector2(24, 480)
+
+[sub_resource type="RectangleShape2D" id="Shape_TowerWall"]
+size = Vector2(56, 150)
+
+[sub_resource type="RectangleShape2D" id="Shape_HighRoof"]
+size = Vector2(260, 28)
+
+[sub_resource type="RectangleShape2D" id="Shape_CeilingCanopy"]
+size = Vector2(210, 22)
+
+[sub_resource type="RectangleShape2D" id="Shape_MidPlaza"]
+size = Vector2(300, 40)
+
+[sub_resource type="RectangleShape2D" id="Shape_BossArena"]
+size = Vector2(540, 40)
+
+[sub_resource type="RectangleShape2D" id="Shape_RightBound"]
+size = Vector2(24, 480)
+
+[node name="PrototypeLevel" type="Node2D"]
+script = ExtResource("1_level")
+
+[node name="SkyAndCityBackdrop" type="Node2D" parent="."]
+z_index = -10
+
+[node name="NightSky" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = -200.0
+offset_top = -300.0
+offset_right = 1800.0
+offset_bottom = 500.0
+color = Color(0.05, 0.06, 0.14, 1)
+
+[node name="MoonGlow" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = 220.0
+offset_top = 24.0
+offset_right = 268.0
+offset_bottom = 72.0
+color = Color(0.95, 0.94, 0.78, 0.85)
+
+[node name="SkylineTower1" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = 40.0
+offset_top = 110.0
+offset_right = 150.0
+offset_bottom = 420.0
+color = Color(0.09, 0.11, 0.22, 1)
+
+[node name="SkylineTower2" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = 290.0
+offset_top = 75.0
+offset_right = 410.0
+offset_bottom = 420.0
+color = Color(0.08, 0.1, 0.2, 1)
+
+[node name="SkylineTower3" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = 680.0
+offset_top = 95.0
+offset_right = 830.0
+offset_bottom = 420.0
+color = Color(0.09, 0.11, 0.22, 1)
+
+[node name="SkylineTower4" type="ColorRect" parent="SkyAndCityBackdrop"]
+offset_left = 1120.0
+offset_top = 60.0
+offset_right = 1320.0
+offset_bottom = 420.0
+color = Color(0.08, 0.1, 0.19, 1)
+
+[node name="WorldGeometry" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="LeftBoundary" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(-12, 180)
+shape = SubResource("Shape_LeftBound")
+
+[node name="RooftopA_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(230, 320)
+shape = SubResource("Shape_RooftopA")
+
+[node name="RooftopA_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 0.0
+offset_top = 300.0
+offset_right = 460.0
+offset_bottom = 340.0
+color = Color(0.22, 0.25, 0.34, 1)
+
+[node name="RooftopA_Trim" type="ColorRect" parent="WorldGeometry"]
+offset_left = 0.0
+offset_top = 300.0
+offset_right = 460.0
+offset_bottom = 305.0
+color = Color(0.38, 0.44, 0.56, 1)
+
+[node name="ClimbTower_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(432, 225)
+shape = SubResource("Shape_TowerWall")
+
+[node name="ClimbTower_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 404.0
+offset_top = 150.0
+offset_right = 460.0
+offset_bottom = 300.0
+color = Color(0.28, 0.31, 0.42, 1)
+
+[node name="HighRoof_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(560, 164)
+shape = SubResource("Shape_HighRoof")
+
+[node name="HighRoof_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 430.0
+offset_top = 150.0
+offset_right = 690.0
+offset_bottom = 178.0
+color = Color(0.24, 0.28, 0.38, 1)
+
+[node name="CeilingOverpass_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(565, 68)
+shape = SubResource("Shape_CeilingCanopy")
+
+[node name="CeilingOverpass_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 460.0
+offset_top = 57.0
+offset_right = 670.0
+offset_bottom = 79.0
+color = Color(0.18, 0.36, 0.48, 1)
+
+[node name="MidPlaza_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(880, 320)
+shape = SubResource("Shape_MidPlaza")
+
+[node name="MidPlaza_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 730.0
+offset_top = 300.0
+offset_right = 1030.0
+offset_bottom = 340.0
+color = Color(0.22, 0.25, 0.34, 1)
+
+[node name="BossArena_Collision" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(1290, 320)
+shape = SubResource("Shape_BossArena")
+
+[node name="BossArena_Visual" type="ColorRect" parent="WorldGeometry"]
+offset_left = 1020.0
+offset_top = 300.0
+offset_right = 1560.0
+offset_bottom = 340.0
+color = Color(0.26, 0.2, 0.32, 1)
+
+[node name="BossArena_Trim" type="ColorRect" parent="WorldGeometry"]
+offset_left = 1020.0
+offset_top = 300.0
+offset_right = 1560.0
+offset_bottom = 305.0
+color = Color(0.65, 0.35, 0.85, 1)
+
+[node name="RightBoundary" type="CollisionShape2D" parent="WorldGeometry"]
+position = Vector2(1548, 180)
+shape = SubResource("Shape_RightBound")
+
+[node name="TutorialSignposts" type="Node2D" parent="."]
+
+[node name="Sign1" type="Label" parent="TutorialSignposts"]
+offset_left = 24.0
+offset_top = 215.0
+offset_right = 250.0
+offset_bottom = 255.0
+theme_override_colors/font_color = Color(0.78, 0.9, 1, 0.88)
+theme_override_font_sizes/font_size = 9
+text = "A/D: Run | Space: Jump | W+Space: Super Jump
+J: Punch Combo | H: Kick | K: Web | L: Throw/Special"
+
+[node name="Sign2" type="Label" parent="TutorialSignposts"]
+offset_left = 310.0
+offset_top = 185.0
+offset_right = 440.0
+offset_bottom = 225.0
+theme_override_colors/font_color = Color(0.78, 0.95, 0.82, 0.88)
+theme_override_font_sizes/font_size = 9
+text = "Hold W / CLIMB at wall
+Jump up to Ceiling Overpass ->"
+
+[node name="Sign3" type="Label" parent="TutorialSignposts"]
+offset_left = 680.0
+offset_top = 115.0
+offset_right = 850.0
+offset_bottom = 148.0
+theme_override_colors/font_color = Color(0.85, 0.95, 1, 0.9)
+theme_override_font_sizes/font_size = 9
+text = "Jump & Press K (WEB)
+to Swing Across Gap!"
+
+[node name="Sign4" type="Label" parent="TutorialSignposts"]
+offset_left = 1045.0
+offset_top = 225.0
+offset_right = 1235.0
+offset_bottom = 258.0
+theme_override_colors/font_color = Color(1, 0.82, 0.45, 0.92)
+theme_override_font_sizes/font_size = 9
+text = "BOSS ARENA: Dodge Telegraphs
+Counterattack when VULNERABLE!"
+
+[node name="WebAnchors" type="Node2D" parent="."]
+
+[node name="WebAnchor1" type="Sprite2D" parent="WebAnchors" groups=["web_anchors"]]
+position = Vector2(330, 150)
+texture = ExtResource("7_anchor")
+
+[node name="WebAnchor2" type="Sprite2D" parent="WebAnchors" groups=["web_anchors"]]
+position = Vector2(710, 78)
+texture = ExtResource("7_anchor")
+
+[node name="WebAnchor3" type="Sprite2D" parent="WebAnchors" groups=["web_anchors"]]
+position = Vector2(920, 150)
+texture = ExtResource("7_anchor")
+
+[node name="WebAnchor4" type="Sprite2D" parent="WebAnchors" groups=["web_anchors"]]
+position = Vector2(1270, 135)
+texture = ExtResource("7_anchor")
+
+[node name="Throwables" type="Node2D" parent="."]
+
+[node name="Crate1" parent="Throwables" instance=ExtResource("5_crate")]
+position = Vector2(195, 290)
+
+[node name="Crate2" parent="Throwables" instance=ExtResource("5_crate")]
+position = Vector2(820, 290)
+
+[node name="Crate3" parent="Throwables" instance=ExtResource("5_crate")]
+position = Vector2(1140, 290)
+
+[node name="Crate4" parent="Throwables" instance=ExtResource("5_crate")]
+position = Vector2(1410, 290)
+
+[node name="Enemies" type="Node2D" parent="."]
+
+[node name="ThugRooftop1" parent="Enemies" instance=ExtResource("3_enemy")]
+position = Vector2(275, 286)
+
+[node name="ThugHighRoof" parent="Enemies" instance=ExtResource("3_enemy")]
+position = Vector2(565, 136)
+patrol_distance = 65.0
+
+[node name="ThugPlaza" parent="Enemies" instance=ExtResource("3_enemy")]
+position = Vector2(895, 286)
+patrol_distance = 80.0
+
+[node name="PrototypeBoss" parent="." instance=ExtResource("4_boss")]
+position = Vector2(1350, 278)
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector2(72, 284)
+
+[node name="HudAndTouchUI" parent="." instance=ExtResource("6_hud")]

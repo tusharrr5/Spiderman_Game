@@ -1,0 +1,31 @@
+# Godot 4+ specific ignores
+.godot/
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# Build and export outputs
+build/
+exports/
+*.apk
+*.aab
+*.pck
+*.zip
+*.dmg
+
+# macOS and editor ignores
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
