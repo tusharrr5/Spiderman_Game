@@ -1,16 +1,16 @@
 [gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/prototype_boss.gd" id="1_boss"]
-[ext_resource type="Texture2D" path="res://assets/sprites/boss_enforcer.png" id="2_tex"]
+[ext_resource type="Script" path="res://scripts/core/sprite_animator.gd" id="2_anim"]
 [ext_resource type="Script" path="res://scripts/combat/health_component.gd" id="3_health"]
 [ext_resource type="Script" path="res://scripts/combat/hurtbox_component.gd" id="4_hurtbox"]
 [ext_resource type="Script" path="res://scripts/combat/hitbox_component.gd" id="5_hitbox"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
-size = Vector2(28, 38)
+size = Vector2(30, 46)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hurtbox"]
-size = Vector2(32, 40)
+size = Vector2(34, 48)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
 size = Vector2(38, 34)
@@ -21,11 +21,10 @@ collision_mask = 1
 script = ExtResource("1_boss")
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
-texture = ExtResource("2_tex")
-hframes = 6
+script = ExtResource("2_anim")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="."]
-position = Vector2(0, 2)
+position = Vector2(0, -2)
 shape = SubResource("RectangleShape2D_body")
 
 [node name="HealthComponent" type="Node" parent="."]
@@ -39,7 +38,7 @@ collision_mask = 40
 script = ExtResource("4_hurtbox")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="HurtboxComponent"]
-position = Vector2(0, 2)
+position = Vector2(0, -2)
 shape = SubResource("RectangleShape2D_hurtbox")
 
 [node name="BodyHitbox" type="Area2D" parent="."]
@@ -52,9 +51,9 @@ shape = SubResource("RectangleShape2D_hitbox")
 
 [node name="TelegraphLabel" type="Label" parent="."]
 offset_left = -56.0
-offset_top = -38.0
+offset_top = -52.0
 offset_right = 56.0
-offset_bottom = -22.0
+offset_bottom = -36.0
 theme_override_colors/font_color = Color(1, 0.85, 0.25, 1)
 theme_override_font_sizes/font_size = 10
 horizontal_alignment = 1

@@ -57,6 +57,16 @@ func take_damage(amount: int, knockback: Vector2 = Vector2.ZERO, source_type: St
 	return true
 
 
+## Temporary invulnerability that never shortens an existing window (dodge rolls, respawns, cutscenes).
+func grant_invulnerability(duration: float) -> void:
+	if is_dead or duration <= 0.0:
+		return
+	_invuln_timer = maxf(_invuln_timer, duration)
+	if not is_invulnerable:
+		is_invulnerable = true
+		invulnerability_changed.emit(true)
+
+
 func heal(amount: int) -> void:
 	if is_dead or amount <= 0:
 		return

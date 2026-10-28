@@ -2,7 +2,7 @@ class_name PlayerController
 extends CharacterBody2D
 ## Spider-Man-inspired 2D Action-Platformer Player Controller (Phase 1 Prototype)
 ## Implements an explicit finite state machine covering:
-## IDLE, RUNNING, JUMPING, FALLING, WALL_CLIMBING, CEILING_CRAWLING, WEB_SWINGING, ATTACKING, HURT, DEFEATED
+## IDLE, RUNNING, JUMPING, FALLING, WALL_CLIMBING, CEILING_CRAWLING, WEB_SWINGING, ATTACKING, HURT, DEFEATED, DODGING
 
 signal state_changed(new_state_name: String)
 signal combo_updated(combo_count: int, move_label: String)
@@ -19,7 +19,8 @@ enum State {
 	WEB_SWINGING,
 	ATTACKING,
 	HURT,
-	DEFEATED
+	DEFEATED,
+	DODGING
 }
 
 # Movement & Physics Constants
@@ -53,9 +54,17 @@ const COMBO_WINDOW: float = 0.55
 const SPECIAL_COOLDOWN: float = 3.0
 const OBJECT_GRAB_RADIUS: float = 84.0
 
+# Dodge roll (Shift / DODGE button): brief invulnerable burst along the ground or through the air
+const DODGE_SPEED: float = 265.0
+const DODGE_DURATION: float = 0.32
+const DODGE_COOLDOWN: float = 0.55
+
+const SHEET_CLASSIC: String = "hero_classic"
+const SHEET_DARK: String = "hero_dark"
+const FEET_Y: float = 14.0
+const MAX_WEB_SHOTS: int = 3
+
 # Preloaded textures & scenes
-var tex_red_blue: Texture2D = preload("res://assets/sprites/hero_red_blue.png")
-var tex_dark_suit: Texture2D = preload("res://assets/sprites/hero_dark_suit.png")
 var web_projectile_scene: PackedScene = preload("res://scenes/objects/web_projectile.tscn")
 
 # Sound streams
@@ -68,7 +77,7 @@ var sfx_hurt: AudioStream = preload("res://assets/audio/hurt.wav")
 var sfx_defeat: AudioStream = preload("res://assets/audio/defeat.wav")
 
 # Child Node References
-@onready var sprite: Sprite2D = $Sprite2D
+@onready var sprite: SpriteAnimator = $Sprite2D
 @onready var health_component: HealthComponent = $HealthComponent
 @onready var hurtbox: HurtboxComponent = $HurtboxComponent
 @onready var melee_hitbox: HitboxComponent = $MeleeHitbox
@@ -94,6 +103,15 @@ var _combo_reset_timer: float = 0.0
 var _hurt_timer: float = 0.0
 var _anim_clock: float = 0.0
 var _wall_detach_grace: float = 0.0
+var _dodge_timer: float = 0.0
+var _dodge_cd: float = 0.0
+var _air_dodge_used: bool = false
+var _is_super_jump: bool = false
+var _oneshot_anim: String = ""
+var _oneshot_timer: float = 0.0
+var _fall_peak_speed: float = 0.0
+## Set by the campaign level while a cutscene / dialogue lock is active
+var input_locked: bool = false
 
 # Buffered One-Shot Action Flags & Edge-Detection State
 # Captures both _input() hardware events AND Input.action_press() calls from on-screen buttons
@@ -105,6 +123,7 @@ var _buf_web_pressed: bool = false
 var _buf_special_pressed: bool = false
 var _buf_suit_pressed: bool = false
 var _buf_down_pressed: bool = false
+var _buf_dodge_pressed: bool = false
 var _prev_action_held: Dictionary = {
 	"jump": false,
 	"attack_punch": false,
@@ -112,7 +131,8 @@ var _prev_action_held: Dictionary = {
 	"web_action": false,
 	"special_action": false,
 	"suit_toggle": false,
-	"climb_down": false
+	"climb_down": false,
+	"dodge": false
 }
 ## Last physics tick's pending one-shot buffers + held axis, read by InputDiagnosticsOverlay (stage S4)
 var debug_last_input_snapshot: String = "none"
@@ -141,6 +161,7 @@ func _ready() -> void:
 	health_component.invulnerability_changed.connect(_on_invulnerability_changed)
 	melee_hitbox.hit_landed.connect(_on_melee_hit_landed)
 
+	sprite.setup(SHEET_CLASSIC, FEET_Y)
 	_apply_suit_palette()
 	_emit_ability_state()
 
@@ -168,6 +189,8 @@ func _capture_event_into_buffers(event: InputEvent) -> void:
 		_buf_suit_pressed = true
 	if event.is_action_pressed("climb_down"):
 		_buf_down_pressed = true
+	if event.is_action_pressed("dodge"):
+		_buf_dodge_pressed = true
 
 
 func buffer_action_tap(action_name: String) -> void:
@@ -187,6 +210,8 @@ func buffer_action_tap(action_name: String) -> void:
 			_buf_suit_pressed = true
 		"climb_down":
 			_buf_down_pressed = true
+		"dodge":
+			_buf_dodge_pressed = true
 
 
 func buffer_action_release(action_name: String) -> void:
@@ -219,7 +244,7 @@ func _snapshot_input_for_diagnostics() -> void:
 	if _buf_special_pressed: parts.append("special")
 	if _buf_suit_pressed: parts.append("suit")
 	if _buf_down_pressed: parts.append("down")
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	if parts.is_empty() and absf(move_x) < 0.05:
 		return
 	debug_last_input_snapshot = "tick%d [%s] axis=%.2f" % [Engine.get_physics_frames(), ",".join(parts), move_x]
@@ -234,6 +259,23 @@ func _clear_input_buffers() -> void:
 	_buf_special_pressed = false
 	_buf_suit_pressed = false
 	_buf_down_pressed = false
+	_buf_dodge_pressed = false
+
+
+func _move_axis() -> float:
+	return 0.0 if input_locked else Input.get_axis("move_left", "move_right")
+
+
+func _climb_axis() -> float:
+	return 0.0 if input_locked else Input.get_axis("climb_up", "climb_down")
+
+
+func _held(action: String) -> bool:
+	return false if input_locked else Input.is_action_pressed(action)
+
+
+func _is_dodge_just_pressed() -> bool:
+	return _buf_dodge_pressed or Input.is_action_just_pressed("dodge")
 
 
 func _is_jump_just_pressed() -> bool:
@@ -276,6 +318,12 @@ func reset_player(target_pos: Vector2) -> void:
 	_combo_reset_timer = 0.0
 	_hurt_timer = 0.0
 	_wall_detach_grace = 0.0
+	_dodge_timer = 0.0
+	_dodge_cd = 0.0
+	_air_dodge_used = false
+	_is_super_jump = false
+	_oneshot_anim = ""
+	input_locked = false
 	_clear_input_buffers()
 	for k in _prev_action_held.keys():
 		_prev_action_held[k] = false
@@ -290,7 +338,15 @@ func _physics_process(delta: float) -> void:
 	_anim_clock += delta
 	_poll_action_edges()
 	_snapshot_input_for_diagnostics()
+	if input_locked:
+		_clear_input_buffers()
 	_update_cooldowns(delta)
+	if _oneshot_timer > 0.0:
+		_oneshot_timer -= delta
+		if _oneshot_timer <= 0.0:
+			_oneshot_anim = ""
+	var was_airborne := not is_on_floor()
+	var prev_vy := velocity.y
 
 	# Suit palette toggle ('C' or HUD button)
 	if (_buf_suit_pressed or Input.is_action_just_pressed("suit_toggle")) and current_state != State.DEFEATED:
@@ -318,7 +374,13 @@ func _physics_process(delta: float) -> void:
 			_state_hurt(delta)
 		State.DEFEATED:
 			_state_defeated(delta)
+		State.DODGING:
+			_state_dodging(delta)
 
+	if is_on_floor():
+		_air_dodge_used = false
+		if was_airborne and prev_vy > 220.0 and current_state != State.DEFEATED:
+			_on_hard_landing(prev_vy)
 	_clear_input_buffers()
 	_update_sprite_animation()
 
@@ -333,6 +395,8 @@ func _update_cooldowns(delta: float) -> void:
 		_special_cd = max(0.0, _special_cd - delta)
 	if _wall_detach_grace > 0.0:
 		_wall_detach_grace = max(0.0, _wall_detach_grace - delta)
+	if _dodge_cd > 0.0:
+		_dodge_cd = max(0.0, _dodge_cd - delta)
 
 	if _combo_reset_timer > 0.0:
 		_combo_reset_timer -= delta
@@ -358,8 +422,8 @@ func toggle_suit_palette() -> void:
 
 
 func _apply_suit_palette() -> void:
-	if sprite != null:
-		sprite.texture = tex_dark_suit if is_dark_suit else tex_red_blue
+	if sprite != null and sprite.sheet_key != "":
+		sprite.swap_sheet(SHEET_DARK if is_dark_suit else SHEET_CLASSIC)
 
 
 func _emit_ability_state() -> void:
@@ -372,7 +436,7 @@ func _emit_ability_state() -> void:
 
 func _state_idle(delta: float) -> void:
 	_apply_gravity(delta)
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	velocity.x = move_toward(velocity.x, 0.0, GROUND_DECEL * delta)
 
 	if _check_combat_or_web_inputs():
@@ -394,7 +458,7 @@ func _state_idle(delta: float) -> void:
 
 func _state_running(delta: float) -> void:
 	_apply_gravity(delta)
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	var suit_speed_mult := 1.08 if is_dark_suit else 1.0
 
 	if abs(move_x) > 0.05:
@@ -460,8 +524,8 @@ func _state_falling(delta: float) -> void:
 
 
 func _state_wall_climbing(delta: float) -> void:
-	var climb_axis := Input.get_axis("climb_up", "climb_down")
-	var move_x := Input.get_axis("move_left", "move_right")
+	var climb_axis := _climb_axis()
+	var move_x := _move_axis()
 
 	# Keep slight pressure toward the wall so move_and_slide maintains wall contact
 	var into_wall_dir := -_wall_normal_x
@@ -489,7 +553,7 @@ func _state_wall_climbing(delta: float) -> void:
 	move_and_slide()
 
 	# Transition to ceiling crawl if hitting ceiling while climbing up
-	if is_on_ceiling() and Input.is_action_pressed("climb_up"):
+	if is_on_ceiling() and _held("climb_up"):
 		_transition_to(State.CEILING_CRAWLING)
 		return
 
@@ -508,7 +572,7 @@ func _state_wall_climbing(delta: float) -> void:
 
 
 func _state_ceiling_crawling(delta: float) -> void:
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	velocity.x = move_x * CEILING_CRAWL_SPEED
 	# Upward adhesion force keeps character flush with the ceiling
 	velocity.y = -45.0
@@ -544,7 +608,7 @@ func _state_web_swinging(delta: float) -> void:
 
 	# Apply pendulum gravity + player directional pump
 	velocity.y += WEB_SWING_GRAVITY * delta
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	velocity.x += move_x * WEB_SWING_PUMP_ACCEL * delta
 	if abs(move_x) > 0.1:
 		_set_facing(move_x)
@@ -581,7 +645,7 @@ func _state_web_swinging(delta: float) -> void:
 
 func _state_attacking(delta: float) -> void:
 	_apply_gravity(delta)
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	if absf(move_x) > 0.05:
 		_set_facing(move_x)
 		velocity.x = move_toward(velocity.x, move_x * MAX_RUN_SPEED * 0.55, GROUND_ACCEL * 0.6 * delta)
@@ -640,8 +704,9 @@ func _try_jump_from_ground() -> bool:
 	if _is_jump_just_pressed():
 		_buf_jump_pressed = false
 		# Super Jump when holding Up ('W'/Up Arrow) + Jump while off cooldown
-		if Input.is_action_pressed("climb_up") and _super_jump_cd <= 0.0:
+		if _held("climb_up") and _super_jump_cd <= 0.0:
 			velocity.y = SUPER_JUMP_VELOCITY
+			_is_super_jump = true
 			_super_jump_cd = SUPER_JUMP_COOLDOWN
 			_play_sfx(sfx_super_jump)
 			_trigger_particles(Color(0.35, 0.85, 1.0, 1.0))
@@ -649,6 +714,7 @@ func _try_jump_from_ground() -> bool:
 			combo_updated.emit(0, "SUPER JUMP!")
 		else:
 			velocity.y = JUMP_VELOCITY
+			_is_super_jump = false
 			_play_sfx(sfx_jump)
 		_transition_to(State.JUMPING)
 		return true
@@ -658,10 +724,10 @@ func _try_jump_from_ground() -> bool:
 func _try_attach_wall() -> bool:
 	if _wall_detach_grace > 0.0 or not is_on_wall():
 		return false
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	var wall_normal := get_wall_normal()
 	var pressing_into_wall := (move_x * wall_normal.x) < -0.25
-	if Input.is_action_pressed("climb_up") or pressing_into_wall:
+	if _held("climb_up") or pressing_into_wall:
 		_wall_normal_x = 1.0 if wall_normal.x >= 0.0 else -1.0
 		_set_facing(-_wall_normal_x)
 		velocity = Vector2.ZERO
@@ -673,7 +739,7 @@ func _try_attach_wall() -> bool:
 func _try_attach_ceiling() -> bool:
 	if _wall_detach_grace > 0.0 or not is_on_ceiling():
 		return false
-	if Input.is_action_pressed("climb_up"):
+	if _held("climb_up"):
 		velocity = Vector2.ZERO
 		_transition_to(State.CEILING_CRAWLING)
 		return true
@@ -681,6 +747,10 @@ func _try_attach_ceiling() -> bool:
 
 
 func _check_combat_or_web_inputs() -> bool:
+	# 0. Dodge roll ('Shift')
+	if _is_dodge_just_pressed() and _try_start_dodge():
+		return true
+
 	# 1. Punch / Chained Combo ('J')
 	if _is_punch_just_pressed():
 		var next_step := 1
@@ -697,7 +767,7 @@ func _check_combat_or_web_inputs() -> bool:
 
 	# 3. Web Action ('K'): Swing if airborne or holding Up near an overhead anchor; otherwise fire Web Projectile
 	if _is_web_just_pressed():
-		if (not is_on_floor() or Input.is_action_pressed("climb_up")) and _try_start_web_swing():
+		if (not is_on_floor() or _held("climb_up")) and _try_start_web_swing():
 			return true
 		_fire_web_projectile()
 		return true
@@ -768,6 +838,7 @@ func _start_melee_attack(step: int) -> void:
 		_play_sfx(sfx_kick)
 		combo_updated.emit(1, "ROUNDHOUSE KICK!")
 
+	sprite.play(_ATTACK_ANIMS.get(_pending_attack_id, "jab"), true)
 	_transition_to(State.ATTACKING)
 
 
@@ -788,6 +859,8 @@ func _start_special_web_slam() -> void:
 	_play_sfx(sfx_web)
 	_trigger_particles(Color(0.9, 0.96, 1.0, 1.0))
 	combo_updated.emit(3, "WEB IMPACT SLAM!")
+	sprite.play("slam", true)
+	Fx.shake(3.0, 0.2)
 	_transition_to(State.ATTACKING)
 
 
@@ -795,6 +868,14 @@ func _fire_web_projectile() -> void:
 	_buf_web_pressed = false
 	if web_projectile_scene == null or get_parent() == null:
 		return
+	# Cap simultaneous web shots so mashing K can never flood the scene
+	var active := 0
+	for p in get_tree().get_nodes_in_group("projectiles"):
+		if p is WebProjectile and (p as WebProjectile).shooter == self:
+			active += 1
+	if active >= MAX_WEB_SHOTS:
+		return
+	_set_oneshot("web_shoot", 0.22)
 	var proj := web_projectile_scene.instantiate() as WebProjectile
 	get_parent().add_child(proj)
 	proj.setup(global_position + Vector2(facing_dir * 16.0, -4.0), facing_dir, self)
@@ -816,6 +897,7 @@ func _try_throw_nearby_object() -> bool:
 	if best_obj != null:
 		_buf_special_pressed = false
 		best_obj.launch(facing_dir, self)
+		_set_oneshot("throw", 0.3)
 		_play_sfx(sfx_web)
 		_trigger_particles(Color(0.95, 0.80, 0.45, 1.0))
 		combo_updated.emit(2, "WEB OBJECT THROW!")
@@ -851,7 +933,7 @@ func _try_start_web_swing() -> bool:
 
 
 func _handle_air_horizontal(delta: float) -> void:
-	var move_x := Input.get_axis("move_left", "move_right")
+	var move_x := _move_axis()
 	if abs(move_x) > 0.05:
 		_set_facing(move_x)
 		velocity.x = move_toward(velocity.x, move_x * MAX_RUN_SPEED, AIR_ACCEL * delta)
@@ -874,6 +956,8 @@ func _set_facing(dir: float) -> void:
 func _transition_to(new_state: State) -> void:
 	if current_state == new_state:
 		return
+	if new_state != State.JUMPING:
+		_is_super_jump = false
 	if current_state == State.WEB_SWINGING:
 		web_line.visible = false
 	if current_state == State.ATTACKING:
@@ -900,6 +984,9 @@ func _on_damaged(_amount: int, knockback: Vector2, _source_type: String) -> void
 		velocity.y = -140.0
 	_hurt_timer = 0.26
 	_play_sfx(sfx_hurt)
+	sprite.play("hurt", true)
+	Fx.shake(3.0, 0.15)
+	Fx.flash(Color(1, 0.2, 0.2, 0.25), 0.2)
 	_trigger_particles(Color(1.0, 0.3, 0.3, 1.0))
 	_transition_to(State.HURT)
 
@@ -918,8 +1005,15 @@ func _on_invulnerability_changed(is_invuln: bool) -> void:
 		sprite.modulate.a = 1.0
 
 
-func _on_melee_hit_landed(_target: Node, _damage_dealt: int, _attack_id: String) -> void:
+func _on_melee_hit_landed(target: Node, damage_dealt: int, attack_id: String) -> void:
 	_trigger_particles(Color(1.0, 0.92, 0.35, 1.0))
+	var heavy := attack_id in ["spider_finisher", "web_slam_special", "kick"]
+	Fx.hitstop(0.075 if heavy else 0.045)
+	Fx.shake(3.5 if heavy else 2.0, 0.14)
+	Audio.play_sfx("heavy_hit" if heavy else "hit", 0.9)
+	if target is Node2D:
+		Fx.burst(get_parent(), (target as Node2D).global_position + Vector2(0, -6), Color(1.0, 0.95, 0.6), 10, 110.0, 160.0, 0.25)
+		Fx.popup_text(get_parent(), (target as Node2D).global_position + Vector2(0, -26), str(damage_dealt), Color(1, 0.92, 0.4), 9)
 
 
 func _trigger_particles(color: Color) -> void:
@@ -930,30 +1024,95 @@ func _trigger_particles(color: Color) -> void:
 
 
 func _play_sfx(stream: AudioStream) -> void:
-	if sfx_player != null and stream != null:
-		sfx_player.stream = stream
-		sfx_player.play()
+	if stream != null:
+		Audio.play_sfx(stream.resource_path, 0.85)
+
+
+func _set_oneshot(anim: String, duration: float) -> void:
+	_oneshot_anim = anim
+	_oneshot_timer = duration
+	if sprite != null:
+		sprite.play(anim, true)
+
+
+func _try_start_dodge() -> bool:
+	if _dodge_cd > 0.0 or current_state == State.DEFEATED:
+		return false
+	if not is_on_floor():
+		if _air_dodge_used:
+			return false
+		_air_dodge_used = true
+	_buf_dodge_pressed = false
+	var dir := _move_axis()
+	if absf(dir) > 0.1:
+		_set_facing(dir)
+	_dodge_timer = DODGE_DURATION
+	_dodge_cd = DODGE_COOLDOWN
+	velocity.x = facing_dir * DODGE_SPEED
+	if not is_on_floor():
+		velocity.y = minf(velocity.y, -60.0)
+	health_component.grant_invulnerability(DODGE_DURATION + 0.05)
+	Audio.play_sfx("dodge", 0.8)
+	_transition_to(State.DODGING)
+	return true
+
+
+func _state_dodging(delta: float) -> void:
+	_apply_gravity(delta)
+	_dodge_timer -= delta
+	velocity.x = move_toward(velocity.x, facing_dir * DODGE_SPEED * 0.35, 520.0 * delta)
+	move_and_slide()
+	if _dodge_timer <= 0.0:
+		_transition_to(State.IDLE if is_on_floor() else State.FALLING)
+
+
+func _on_hard_landing(impact_speed: float) -> void:
+	Fx.burst(get_parent(), global_position + Vector2(0, FEET_Y), Color(0.85, 0.82, 0.78, 0.8), 8, 70.0, 60.0, 0.3)
+	Audio.play_sfx("land", clampf(impact_speed / 420.0, 0.3, 0.9))
+	if impact_speed > 380.0:
+		Fx.shake(2.0, 0.1)
+	if current_state == State.IDLE:
+		_set_oneshot("land", 0.12)
+
+
+const _ATTACK_ANIMS: Dictionary = {
+	"jab_1": "jab", "cross_2": "cross", "spider_finisher": "finisher", "kick": "kick", "web_slam_special": "slam"
+}
 
 
 func _update_sprite_animation() -> void:
 	if sprite == null:
 		return
+	sprite.speed_scale = 1.0
+	sprite.offset = Vector2.ZERO
+	var anim := "idle"
 	match current_state:
 		State.IDLE:
-			sprite.frame = 0 if int(_anim_clock * 3.5) % 2 == 0 else 1
+			anim = "idle"
 		State.RUNNING:
-			sprite.frame = 2 if int(_anim_clock * 10.0) % 2 == 0 else 3
+			anim = "run"
+			sprite.speed_scale = clampf(absf(velocity.x) / MAX_RUN_SPEED, 0.45, 1.25)
 		State.JUMPING:
-			sprite.frame = 4
+			anim = "super_jump" if _is_super_jump else "jump"
 		State.FALLING:
-			sprite.frame = 5
+			anim = "fall"
 		State.WALL_CLIMBING:
-			sprite.frame = 6
+			anim = "wall_climb" if absf(velocity.y) > 5.0 else "wall_idle"
 		State.CEILING_CRAWLING:
-			sprite.frame = 7
+			anim = "ceiling_crawl"
+			sprite.speed_scale = 1.0 if absf(velocity.x) > 5.0 else 0.0
+			sprite.offset = Vector2(0, 30)
 		State.WEB_SWINGING:
-			sprite.frame = 8
+			anim = "swing"
 		State.ATTACKING:
-			sprite.frame = 10 if (_pending_attack_id in ["kick", "spider_finisher"]) else 9
-		State.HURT, State.DEFEATED:
-			sprite.frame = 11
+			anim = _ATTACK_ANIMS.get(_pending_attack_id, "jab")
+		State.HURT:
+			anim = "hurt"
+		State.DEFEATED:
+			anim = "defeated"
+		State.DODGING:
+			anim = "dodge"
+	# Short overlay actions (web shot, throw, landing) only replace calm grounded/air poses
+	if _oneshot_anim != "" and current_state in [State.IDLE, State.RUNNING, State.JUMPING, State.FALLING]:
+		anim = _oneshot_anim
+	sprite.play(anim)

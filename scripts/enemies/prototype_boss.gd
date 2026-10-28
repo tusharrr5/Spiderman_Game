@@ -40,7 +40,7 @@ var sfx_warn: AudioStream = preload("res://assets/audio/boss_warn.wav")
 var sfx_hit: AudioStream = preload("res://assets/audio/hit.wav")
 var sfx_defeat: AudioStream = preload("res://assets/audio/defeat.wav")
 
-@onready var sprite: Sprite2D = $Sprite2D
+@onready var sprite: SpriteAnimator = $Sprite2D
 @onready var health_component: HealthComponent = $HealthComponent
 @onready var hurtbox: HurtboxComponent = $HurtboxComponent
 @onready var body_hitbox: HitboxComponent = $BodyHitbox
@@ -66,6 +66,7 @@ func _ready() -> void:
 	hurtbox.hit_received.connect(_on_hit_received)
 	health_component.health_changed.connect(_on_health_changed)
 	health_component.defeated.connect(_on_defeated)
+	sprite.setup("brick", 21.0)
 	_update_visuals()
 
 
@@ -78,6 +79,7 @@ func reset_boss() -> void:
 	_attack_cycle = 0
 	_engaged = false
 	visible = true
+	modulate = Color(1, 1, 1, 1)
 	collision_layer = 4
 	collision_mask = 1
 	hurtbox.monitoring = true
@@ -176,6 +178,8 @@ func _physics_process(delta: float) -> void:
 					shockwave_particles.restart()
 					shockwave_particles.emitting = true
 				_play_sfx(sfx_hit)
+				Fx.shake(5.0, 0.25)
+				Fx.burst(get_parent(), global_position + Vector2(0, 20), Color(0.8, 0.75, 0.7), 18, 140.0, 160.0, 0.4)
 				_enter_state(BossState.ATTACK_SLAM_IMPACT, 0.28)
 			elif _state_timer <= 0.0:
 				_enter_state(BossState.RECOVERY_VULNERABLE, 1.65)
@@ -246,6 +250,7 @@ func _on_defeated() -> void:
 	telegraph_label.text = "DEFEATED!"
 	boss_status_changed.emit("PROTOTYPE BOSS DEFEATED!")
 	_play_sfx(sfx_defeat)
+	Fx.shake(4.0, 0.3)
 	boss_defeated.emit()
 
 
@@ -268,25 +273,23 @@ func _update_visuals() -> void:
 	if sprite == null:
 		return
 	sprite.flip_h = facing_dir < 0.0
+	sprite.modulate = Color(1, 1, 1, 1)
 	match state:
-		BossState.DORMANT, BossState.IDLE_POSITIONING:
-			sprite.frame = 0
-			sprite.modulate = Color(1, 1, 1, 1)
-		BossState.TELEGRAPH_CHARGE:
-			sprite.frame = 1
-			sprite.modulate = Color(1.0, 0.85, 0.4, 1.0)
+		BossState.DORMANT:
+			sprite.play("idle")
+		BossState.IDLE_POSITIONING:
+			sprite.play("walk" if absf(velocity.x) > 5.0 else "idle")
+		BossState.TELEGRAPH_CHARGE, BossState.TELEGRAPH_SLAM:
+			sprite.play("telegraph")
+			sprite.modulate = Color(1.0, 0.8 + 0.2 * sin(Time.get_ticks_msec() * 0.03), 0.55, 1.0)
 		BossState.ATTACK_CHARGE:
-			sprite.frame = 2
-			sprite.modulate = Color(1.0, 0.7, 0.3, 1.0)
-		BossState.TELEGRAPH_SLAM, BossState.ATTACK_SLAM_AIR:
-			sprite.frame = 3
-			sprite.modulate = Color(1.0, 0.85, 0.4, 1.0)
+			sprite.play("attack")
+		BossState.ATTACK_SLAM_AIR:
+			sprite.play("slam_air")
 		BossState.ATTACK_SLAM_IMPACT:
-			sprite.frame = 4
-			sprite.modulate = Color(1.0, 0.6, 0.4, 1.0)
+			sprite.play("slam_impact")
 		BossState.RECOVERY_VULNERABLE:
-			sprite.frame = 5
-			sprite.modulate = Color(0.65, 0.95, 1.0, 1.0)
+			sprite.play("vulnerable")
+			sprite.modulate = Color(0.75, 0.95, 1.0, 1.0)
 		BossState.DEFEATED:
-			sprite.frame = 5
-			sprite.modulate = Color(0.45, 0.45, 0.5, 0.65)
+			sprite.play("ko")

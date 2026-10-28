@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/menus/level_select.gd" id="1_script"]
+
+[node name="LevelSelect" type="Control"]
+script = ExtResource("1_script")
