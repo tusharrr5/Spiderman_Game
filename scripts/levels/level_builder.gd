@@ -253,6 +253,9 @@ func spawn_enemy(e: Dictionary) -> Node:
 	for k in ["type", "x", "y", "tag"]:
 		params.erase(k)
 	node.configure(params)
+	# later chapters' street fighters learn to block light attacks (heavies / specials break guards)
+	if not e.has("guard_chance") and node is NormalEnemy:
+		node.guard_chance = clampf(0.1 * (int(data.get("number", 1)) - 1), 0.0, 0.3)
 	if e.has("tag"):
 		node.objective_tag = String(e["tag"])
 	var y := float(e["y"])

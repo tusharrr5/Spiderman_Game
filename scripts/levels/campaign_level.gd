@@ -18,6 +18,9 @@ var hud: HudAndTouchUI
 var dialogue: DialogueBox
 var diagnostics_overlay: InputDiagnosticsOverlay
 var follower: FollowerNPC
+var last_result: Dictionary = {}
+var post_fx: PostFX
+var camera_director: CombatCamera
 
 var objectives: Array = []
 var obj_index: int = 0
@@ -51,12 +54,24 @@ func _ready() -> void:
 	player.position = _spawn_position()
 	world.add_child(player)
 	_configure_camera()
-	if GameState.dark_suit_unlocked and level_number >= 4:
-		player.toggle_suit_palette()
+	var suit := GameState.suit_equipped
+	if suit == "classic" and GameState.dark_suit_unlocked and level_number >= 4:
+		suit = "dark"
+	if suit != "classic":
+		player.apply_suit(suit)
+
+	post_fx = PostFX.new()
+	add_child(post_fx)
+	post_fx.apply_theme(String(data["theme"]))
+	camera_director = CombatCamera.new()
+	add_child(camera_director)
+	camera_director.setup(player)
 
 	hud = HUD_SCENE.instantiate() as HudAndTouchUI
+	hud.layer = 10
 	add_child(hud)
 	hud.enable_campaign_mode()
+	hud.attach_fight_hud(player)
 	dialogue = DialogueBox.new()
 	add_child(dialogue)
 	diagnostics_overlay = InputDiagnosticsOverlay.new()
@@ -349,7 +364,15 @@ func _complete_level() -> void:
 	if not story_defeat and player.current_state != PlayerController.State.DEFEATED:
 		player.sprite.play("victory", true)
 	hud.show_banner("CHAPTER COMPLETE" if not story_defeat else "OVERWHELMED...", String(data["title"]), 2.2)
-	await get_tree().create_timer(3.0).timeout
+	var result := Scoring.evaluate(player.stats, level_time, float(data.get("par_time", 240.0)), 1000 * level_number)
+	var new_best := GameState.record_chapter_result(level_number, int(result["score"]), String(result["rank"]), int(result["stars"]))
+	GameState.add_tokens(int(result["tokens"]))
+	last_result = result
+	await get_tree().create_timer(1.4).timeout
+	var panel := ResultsPanel.new()
+	hud.get_node("RootControl").add_child(panel)
+	panel.show_result(String(data["chapter"]) + "  RESULTS", result, new_best)
+	await get_tree().create_timer(3.4).timeout
 	GameState.finish_level(level_number, level_time)
 
 

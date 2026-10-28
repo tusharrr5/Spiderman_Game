@@ -55,6 +55,11 @@ func _card(n: int) -> Button:
 			if GameState.best_times.has(n):
 				bt = "  " + UIKit.format_time(float(GameState.best_times[n]))
 			status = "* COMPLETE" + bt
+			if GameState.chapter_rank.has(n):
+				var stars := ""
+				for i in range(3):
+					stars += "★" if i < int(GameState.chapter_stars.get(n, 0)) else "☆"
+				status = "RANK %s  %s%s" % [GameState.chapter_rank[n], stars, bt]
 		elif GameState.is_unlocked(n):
 			status = "> PLAY"
 		b.text = "CHAPTER %d\n%s\n%s" % [n, _wrap(String(d["title"])), status]

@@ -6,12 +6,14 @@ extends SceneTree
 const SUITES: Array[String] = [
 	"res://tests/suites/prototype_suite.gd",
 	"res://tests/suites/campaign_suite.gd",
+	"res://tests/suites/combat_suite.gd",
+	"res://tests/suites/versus_suite.gd",
 ]
 
 
 func _init() -> void:
 	# A failed assert() aborts the coroutine without quitting; the watchdog turns that into exit code 1.
-	create_timer(240.0, true, false, true).timeout.connect(func() -> void:
+	create_timer(420.0, true, false, true).timeout.connect(func() -> void:
 		printerr("[FAIL] Test suite aborted or timed out (a failed assert stops the coroutine). See SCRIPT ERROR above.")
 		quit(1)
 	)

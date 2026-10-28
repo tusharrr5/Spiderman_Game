@@ -180,7 +180,7 @@ func _test_ch1() -> bool:
 		await _hurt(brick, 30)
 		await _frames(6)
 		guard += 1
-	await _frames(200)
+	await _wait_completed(1)
 	var ok := _check(level.completed and GameState.is_completed(1) and GameState.is_unlocked(2), "Ch1: defeating Brick completes the chapter and unlocks Ch2")
 	ok = ok and _check(GameState.last_route == GameState.STORY_SCENE and GameState.story_next == "level:2", "Ch1: completion routes to the outro story then Ch2")
 	await _unload(level)
@@ -219,7 +219,7 @@ func _test_ch2() -> bool:
 		if c is InteractiveZone and (c as InteractiveZone).zone_id == "tech_case":
 			case_zone = c
 	await _teleport(level, case_zone.global_position)
-	await _frames(200)
+	await _wait_completed(2)
 	var ok := _check(level.completed and GameState.is_completed(2), "Ch2: collecting the device completes the chapter")
 	await _unload(level)
 	if ok:
@@ -302,7 +302,7 @@ func _test_ch4() -> bool:
 	if not _check(level.follower != null and level.obj_index == 4 and level._escape_time > 0.0, "Ch4: freeing MJ starts the timed escape with MJ following"):
 		return false
 	await _teleport(level, level.builder.exit_zone.global_position)
-	await _frames(200)
+	await _wait_completed(4)
 	var ok := _check(level.completed and GameState.is_completed(4), "Ch4: reaching the exit with MJ completes the rescue")
 	await _unload(level)
 	if ok:
@@ -341,10 +341,18 @@ func _test_ch5() -> bool:
 	while not g.health_component.is_dead:
 		await _hurt(g, 25)
 		await _frames(3)
-	await _frames(220)
+	await _wait_completed(5)
 	var ok := _check(level.completed and GameState.is_completed(5), "Ch5: defeating the Goblin completes the campaign")
 	ok = ok and _check(GameState.story_next == "credits", "Ch5: the finale story leads to the credits")
 	await _unload(level)
 	if ok:
 		print("[PASS] Ch5 three-phase Goblin finale and campaign completion")
 	return ok
+
+
+## Waits for the chapter-complete flow (banner + results card) to record completion, up to 8 seconds.
+func _wait_completed(n: int) -> void:
+	var waited := 0
+	while not GameState.is_completed(n) and waited < 480:
+		await _frames(10)
+		waited += 10

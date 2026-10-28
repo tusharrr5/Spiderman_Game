@@ -2,6 +2,9 @@
 import math
 from char_renderer import Body, Pose, Style, hexc, shade, mix, up, down, add, draw_character
 
+# proportions for the volumetric renderer: smaller head, longer limbs (same overall height)
+HERO_BODY_VOL = Body(torso=24.0, neck=3.5, head_r=7.4, upper_arm=13.5, forearm=12.8, thigh=17.5, shin=17.0,
+                     chest_w=9.8, waist_w=6.3, arm_w=3.5, leg_w=4.5, hand_r=3.0, foot_len=7.0, outline=1.25)
 HERO_BODY = Body(torso=23.0, neck=3.0, head_r=9.6, upper_arm=13.0, forearm=12.5, thigh=16.0, shin=16.0,
                  chest_w=9.2, waist_w=6.4, arm_w=3.9, leg_w=4.7, hand_r=3.9, foot_len=7.5, outline=1.25)
 
@@ -217,6 +220,42 @@ def hero_animations():
     ]))
     anims.append(("carry", 6, True, [
         P(torso=8, head=-8, arm_f=(170, 0), arm_b=(40, 80), leg_f=(30, -40), leg_b=(-10, -20), grounded=False),
+    ]))
+    # ---- fighting-game moveset: guard, parry, heavy, specials
+    anims.append(("block", 4, True, [
+        P(torso=6, head=6, arm_f=(62, 108), arm_b=(48, 122), leg_f=(30, -32), leg_b=(-24, -18)),
+        P(torso=7, head=7, arm_f=(64, 106), arm_b=(50, 120), leg_f=(31, -36), leg_b=(-25, -22)),
+    ]))
+    anims.append(("block_hit", 10, False, [
+        P(torso=-6, head=10, arm_f=(55, 116), arm_b=(44, 126), leg_f=(32, -26), leg_b=(-30, -12)),
+        P(torso=2, head=8, arm_f=(60, 110), arm_b=(48, 122), leg_f=(30, -30), leg_b=(-26, -16)),
+    ]))
+    anims.append(("parry", 18, False, [
+        P(torso=6, head=6, arm_f=(62, 108), arm_b=(48, 122), leg_f=(30, -32), leg_b=(-24, -18)),
+        P(torso=-10, head=-6, arm_f=(145, 18), arm_b=(25, 95), leg_f=(34, -28), leg_b=(-28, -12)),
+        P(torso=-6, head=-4, arm_f=(130, 30), arm_b=(30, 90), leg_f=(32, -30), leg_b=(-26, -14)),
+    ]))
+    anims.append(("heavy", 9, False, [
+        P(torso=-14, head=-4, arm_f=(-50, 100), arm_b=(30, 80), leg_f=(35, -60), leg_b=(-30, -30)),
+        P(torso=-18, head=-2, arm_f=(-72, 112), arm_b=(36, 86), leg_f=(46, -82), leg_b=(-34, -40)),
+        P(torso=30, head=-22, arm_f=(98, 0), arm_b=(-50, 60), leg_f=(56, -20), leg_b=(-46, 0)),
+        P(torso=28, head=-20, arm_f=(95, 4), arm_b=(-48, 62), leg_f=(54, -22), leg_b=(-44, -2)),
+        P(torso=14, head=-10, arm_f=(60, 40), arm_b=(-30, 70), leg_f=(32, -18), leg_b=(-26, -6)),
+    ]))
+    anims.append(("sp_whirl", 20, True, [
+        P(torso=10, head=-10, arm_f=(95, 0), arm_b=(-95, 0), leg_f=(40, -60), leg_b=(-20, -40), rot=r, grounded=False,
+          pelvis=(48, 56), extras={"web_line": (90 + r, 26)})
+        for r in range(0, 360, 45)
+    ]))
+    jab_p = dict(torso=20, head=-12, arm_f=(90, 0), arm_b=(-30, 85), leg_f=(40, -14), leg_b=(-34, 0))
+    cross_p = dict(torso=24, head=-14, arm_f=(15, 115), arm_b=(94, 0), leg_f=(38, -12), leg_b=(-36, 0))
+    anims.append(("sp_flurry", 16, True, [P(**(jab_p if i % 2 == 0 else cross_p), dx=(i % 2) * 1.5) for i in range(6)]))
+    anims.append(("sp_uppercut", 8, False, [
+        P(torso=30, head=-20, arm_f=(10, 100), arm_b=(-30, 70), leg_f=(70, -110), leg_b=(-30, -80)),
+        P(torso=-6, head=-14, arm_f=(174, 0), arm_b=(-40, 60), leg_f=(24, -44), leg_b=(-10, -24), grounded=False,
+          pelvis=(48, 50)),
+        P(torso=-4, head=-12, arm_f=(176, 2), arm_b=(-36, 62), leg_f=(30, -60), leg_b=(-8, -30), grounded=False,
+          pelvis=(48, 50)),
     ]))
     return anims
 

@@ -1,11 +1,9 @@
 class_name SpriteAnimator
 extends Sprite2D
-## Plays named animations from a generated horizontal sprite strip described in SpriteDB.
-## Sheets are drawn at 2x resolution and displayed at scale 0.5 so they map 1:1 onto a 1280x720 window.
+## Plays named animations from a generated grid atlas described in SpriteDB.
+## Sheets are pre-rendered at high resolution; each entry carries its own display scale and foot offset.
 
 signal animation_finished(anim_name: String)
-
-const DISPLAY_SCALE: float = 0.5
 
 var sheet_key: String = ""
 var anim_name: String = ""
@@ -14,6 +12,7 @@ var _frame_in_anim: int = 0
 var _time: float = 0.0
 var _finished: bool = false
 var speed_scale: float = 1.0
+var _count: int = 1
 
 
 ## feet_y: local y (in the parent's units) where the character's feet should rest.
@@ -21,14 +20,15 @@ func setup(key: String, feet_y: float = 0.0) -> void:
 	var info: Dictionary = SpriteDB.SHEETS[key]
 	sheet_key = key
 	texture = load(info["path"])
-	hframes = int(info["count"])
-	vframes = 1
+	hframes = int(info["cols"])
+	vframes = int(info["rows"])
+	_count = int(info["count"])
 	_anims = info["anims"]
-	scale = Vector2(DISPLAY_SCALE, DISPLAY_SCALE)
-	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	var s: float = float(info["scale"])
+	scale = Vector2(s, s)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var frame_px: float = float(info["frame"])
-	# generated frames rest the feet 6px above the frame bottom
-	position.y = feet_y - (frame_px * 0.5 - 6.0) * DISPLAY_SCALE
+	position.y = feet_y - (frame_px * 0.5 - float(info["feet"])) * s
 	if anim_name == "" or not _anims.has(anim_name):
 		play(_anims.keys()[0], true)
 	else:
@@ -88,4 +88,4 @@ func _process(delta: float) -> void:
 
 func _apply_frame() -> void:
 	var a: Array = _anims[anim_name]
-	frame = clampi(int(a[0]) + _frame_in_anim, 0, hframes - 1)
+	frame = clampi(int(a[0]) + _frame_in_anim, 0, _count - 1)

@@ -94,6 +94,16 @@ func apply_combat_hit(damage: int, knockback: Vector2, attack_type: String = "me
 	return hurtbox.receive_hit(damage, knockback, attack_type, stun_duration)
 
 
+## Parried charges and slams leave Brick open.
+func apply_parry_stun(duration: float) -> void:
+	if state in [BossState.TELEGRAPH_CHARGE, BossState.ATTACK_CHARGE, BossState.TELEGRAPH_SLAM, BossState.ATTACK_SLAM_IMPACT, BossState.IDLE_POSITIONING]:
+		_enter_state(BossState.RECOVERY_VULNERABLE, duration + 0.4)
+
+
+func is_defeated() -> bool:
+	return state == BossState.DEFEATED
+
+
 func _physics_process(delta: float) -> void:
 	if state == BossState.DEFEATED:
 		return

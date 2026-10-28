@@ -28,9 +28,15 @@ func _draw() -> void:
 		draw_rect(r2, Color(0.08, 0.06, 0.1, 0.35))
 	draw_texture_rect(_tex, r2, true)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# depth shading toward the bottom and right edge
-	var shade_h := minf(rect.size.y, 60.0)
-	draw_rect(Rect2(rect.position.x, rect.end.y - shade_h, rect.size.x, shade_h), Color(0, 0, 0, 0.18))
+	# depth shading: the facade falls into shadow below the lit roof edge (ambient occlusion feel)
+	var shade_h := minf(rect.size.y, 150.0)
+	var bands := 14
+	for i in range(bands):
+		var t := float(i + 1) / bands
+		var y0 := rect.position.y + shade_h * float(i) / bands
+		draw_rect(Rect2(rect.position.x, y0, rect.size.x, shade_h / bands + 0.5), Color(0.02, 0.01, 0.05, 0.62 * t * t))
+	if rect.size.y > shade_h:
+		draw_rect(Rect2(rect.position.x, rect.position.y + shade_h, rect.size.x, rect.size.y - shade_h), Color(0.02, 0.01, 0.05, 0.62))
 	draw_rect(Rect2(rect.end.x - 3, rect.position.y, 3, rect.size.y), Color(0, 0, 0, 0.25))
 	draw_rect(Rect2(rect.position.x, rect.position.y, 2, rect.size.y), Color(1, 1, 1, 0.08))
 	if show_cap and _cap != null and rect.size.y >= 10.0:

@@ -153,6 +153,12 @@ func _build_campaign_widgets() -> void:
 	btn_controls.pressed.connect(func() -> void: show_controls_guide(false))
 	btn_touch_toggle = _overlay_button("TOUCH: ON", hbox)
 	btn_touch_toggle.pressed.connect(func() -> void: set_touch_visible(not touch_container.visible))
+	var btn_fx := _overlay_button("FX: " + GameState.fx_quality.to_upper(), hbox)
+	btn_fx.pressed.connect(func() -> void:
+		GameState.fx_quality = "low" if GameState.fx_quality == "high" else "high"
+		GameState.save_game()
+		btn_fx.text = "FX: " + GameState.fx_quality.to_upper()
+		get_tree().call_group("post_fx", "set", "visible", GameState.fx_quality != "low"))
 	btn_menu = _overlay_button("MENU", hbox)
 	btn_menu.pressed.connect(func() -> void:
 		touch_button_event.emit("BtnMenu", "menu", true)
@@ -195,12 +201,13 @@ func _build_controls_panel(root: Control) -> void:
 	var body := _label(9, Color(0.92, 0.94, 1.0))
 	body.text = ("MOVE  A / D  or  Arrows            JUMP  SPACE   (W + SPACE = SUPER JUMP)\n"
 		+ "CLIMB  run into walls or hold W    CEILING  jump up into it holding W   (S drops)\n"
-		+ "PUNCH  J  (J J J = 3-hit combo)     KICK  H   (J J H = finisher)\n"
+		+ "PUNCH  J  (J J J combo, HOLD J = guard-breaking HEAVY)    KICK  H\n"
+		+ "BLOCK  hold S     PARRY  block just before a hit lands -> attacker is stunned\n"
 		+ "WEB  K  shoots webs  /  in the air near an anchor = WEB SWING (SPACE releases)\n"
-		+ "SPECIAL  L  yanks & throws the nearest crate, or WEB SLAM\n"
-		+ "DODGE  SHIFT  (brief invulnerability)       SUIT  C       PAUSE  ESC\n\n"
-		+ "Touch: left pad moves/climbs, right pad jumps, attacks, webs and dodges.\n"
-		+ "Bosses: watch for !! warnings, then strike while they are VULNERABLE.")
+		+ "SPECIALS  L = 1 bar   W+L = 2 bars   S+L = 3 bars    (L near a crate throws it)\n"
+		+ "DODGE  SHIFT  (SHIFT then J = DASH STRIKE)       SUIT  C       PAUSE  ESC\n\n"
+		+ "Touch: hold DOWN to block, hold PUNCH for heavy, UP/DOWN + STAR for big specials.\n"
+		+ "Land hits, block and parry to fill the POWER meter. Clean, fast, stylish runs rank S.")
 	body.autowrap_mode = TextServer.AUTOWRAP_OFF
 	vb.add_child(body)
 	var ok := Button.new()
@@ -249,6 +256,20 @@ func set_touch_visible(on: bool) -> void:
 		btn_touch_toggle.text = "TOUCH: ON" if on else "TOUCH: OFF"
 	if not on:
 		release_all_touch_actions()
+
+
+var fight_hud: FightHUD
+
+
+## Adds the fighting-game layer (power meter, hit counter, opponent bar) bound to the player.
+func attach_fight_hud(p: PlayerController) -> void:
+	if fight_hud == null:
+		fight_hud = FightHUD.new()
+		$RootControl.add_child(fight_hud)
+		$RootControl.move_child(fight_hud, 1)
+	fight_hud.bind(p)
+	state_badge_label.visible = false
+	cooldown_label.visible = false
 
 
 func enable_campaign_mode() -> void:

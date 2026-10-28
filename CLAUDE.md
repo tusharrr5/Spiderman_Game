@@ -8,30 +8,41 @@
 
 ## 2. Layout
 ```text
-scripts/core/      game_state.gd (autoload GameState), audio_manager.gd (Audio), fx.gd (Fx), sprite_animator.gd
+scripts/core/      game_state.gd (autoload GameState: progress + tokens/upgrades/suits/ranks/arena records), audio_manager.gd (Audio),
+                   fx.gd (Fx), sprite_animator.gd (grid atlases), combat_camera.gd, post_fx.gd, scoring.gd
 scripts/player/    player_controller.gd  (PlayerController state machine)
 scripts/combat/    health/hitbox/hurtbox components, web_projectile, enemy_projectile, throwable_object
 scripts/enemies/   enemy_base -> normal_enemy (thug), gunner_enemy, drone_enemy; boss_base -> thief_boss, goblin_boss; prototype_boss (Brick)
-scripts/levels/    campaign_level.gd, level_builder.gd, prototype_level.gd, objects/ (platforms, zones, gates, breakables, follower)
+scripts/versus/    versus_level.gd (1v1 / 3v3 elimination / CPU vs CPU, tag, 99s timer, results), fighter_ai.gd (bot brain, 4 levels)
+scripts/levels/    campaign_level.gd, arena_level.gd (gauntlet/survival/daily), level_builder.gd, prototype_level.gd, objects/
 scripts/data/      level_registry.gd (ALL chapter data), story_data.gd, sprite_db.gd (GENERATED - do not edit)
-scripts/ui/        hud_and_touch.gd, dialogue_box.gd, input_diagnostics.gd, menus/ (title, level select, story, credits, ui_kit)
+scripts/ui/        hud_and_touch.gd, fight_hud.gd, results_panel.gd, dialogue_box.gd, input_diagnostics.gd,
+                   menus/ (title, level select, arena_hub, shop, story, credits, ui_kit)
 scenes/            menus/*.tscn, levels/campaign_level.tscn + prototype_level.tscn, player, enemies, objects, ui
 assets/            sprites/characters (generated strips), backgrounds/<theme>, tiles, props, portraits, story, ui, audio, music
-tools/art|audio|capture   asset generators, screenshot capture, README GIF recording
-tests/             headless_test_runner.gd (launcher), suites/prototype_suite.gd, suites/campaign_suite.gd, compile_check.gd
+tools/art|audio|capture   asset generators (characters: vol_renderer.py + vol_chars.py + vol_build.py), screenshots, README GIF
+tests/             headless_test_runner.gd (launcher), suites/prototype_suite.gd, campaign_suite.gd, combat_suite.gd, versus_suite.gd, compile_check.gd
 docs/media/        README screenshots + gameplay.gif
 ```
 Main scene: `res://scenes/menus/title_screen.tscn`. The original prototype level still exists and is used by `prototype_suite`.
 
 ## 3. Input
 Actions: `move_left/right` (A/D, arrows), `climb_up/down` (W/S, arrows), `jump` (Space), `attack_punch` (J), `attack_kick` (H), `web_action` (K), `special_action` (L), `suit_toggle` (C), `dodge` (Shift), `pause_game` (Esc). Each key is bound by both keycode and physical keycode.
+Fighting inputs reuse these actions (no new actions): hold `climb_down` on the ground = BLOCK (parry = block within `parry_window` before a hit), hold `attack_punch` = heavy, `dodge` then punch = dash strike, `special_action` = SP1 / `climb_up`+special = SP2 / `climb_down`+special = SP3 (needs 1/2/3 meter bars; a nearby crate is thrown instead).
 - On-screen buttons call `Input.action_press/release` **and** `PlayerController.buffer_action_tap/release` (the shared action interface). Releasing on window focus loss is handled in the HUD, because the engine does not release `action_press` state.
 - `PlayerController.input_locked` freezes input during cutscenes.
 - **Editor Game tab gotcha**: in 2D/3D Select or Suspend mode, Godot calls `Input.set_disable_input(true)` and `root.set_disable_input_override(true)`. No game code receives input. `Viewport.is_input_disabled()` does NOT report this. The F3 diagnostics overlay detects it (`INPUT_SINGLETON_BLOCKED`) and logs to `user://input_diag_<mode>.log`. The fix is the Game tab's gamepad "Input" toggle; do not add workarounds in game code.
 - Verified with real OS keystrokes in a standalone window (2026-10-28): movement, wall climb, ceiling crawl, jump/super jump, web shot/swing and special. On-screen buttons with a real mouse, J/H/Esc, and real mobile touch have **not** been manually verified.
 
 ## 4. Gameplay architecture
-- Player states: IDLE, RUNNING, JUMPING, FALLING, WALL_CLIMBING, CEILING_CRAWLING, WEB_SWINGING, ATTACKING, HURT, DEFEATED, DODGING. The collision body is 14×30 with feet at local y=+14. Sprites are 96 px frames shown at 0.5 scale.
+- Player states: IDLE, RUNNING, JUMPING, FALLING, WALL_CLIMBING, CEILING_CRAWLING, WEB_SWINGING, ATTACKING, HURT, DEFEATED, DODGING, BLOCKING. The collision body is 14×30 with feet at local y=+14.
+- Character sprites are pre-rendered 3D-look grid atlases (≤4096 px wide) from `tools/art/vol_build.py`. SpriteDB stores frame px, cols/rows, display `scale` and `feet` offset per sheet (4 texels per game px). Never hand-edit `sprite_db.gd`.
+- Guard/parry: `HurtboxComponent.guard` is an optional Callable(damage, knockback, type, attacker) -> damage (<0 cancels). Hitboxes pass `owner_actor` as the attacker on both the area and body paths. Enemies use it to block light attacks (`EnemyBase.GUARDABLE`) unless the attack is in `GUARD_BREAKERS`. Anything that can be parried implements `apply_parry_stun(duration)`.
+- Versus fighters are PlayerControllers. A bot has `is_bot=true` and `controller=FighterAI` set BEFORE add_child: it never joins group "player" or reads Input, and the AI feeds `buffer_action_tap` + `is_held`/`move_axis`. `setup_fighter()` sets team groups (`team1`/`team2`, `foe_group`), stats, passive and sheet. Team 2 uses enemy collision layers (body/hurtbox 4, hitbox 16 mask 2). Versus scales HP x1.6 and damage x0.5 (`VersusLevel.HP_SCALE/DMG_SCALE`).
+- Roster data is in `scripts/data/spider_roster.gd`. Variant art is in `tools/art/spiderverse.py` (18 `sv_*` sheets at 3 texels/px; Classic/Symbiote reuse the hero sheets).
+- Multi-hit specials use `_hit_schedule` windows. Hitbox deactivation is deferred, so never deactivate and re-activate in the same frame.
+- Scoring (`Scoring.evaluate`) feeds chapter ranks/stars and the arena. Tokens buy `GameState.UPGRADES` / `SUITS` (extra suits = classic sheet + `assets/shaders/suit_tint.gdshader`).
+- `CombatCamera` (group `camera_director`) owns camera zoom/offset; Fx shake rides on top via `Fx.set_camera_base`. `PostFX` (layer 5, group `post_fx`) grades the world; the HUD is on layer 10.
 - `HitboxComponent` hits each target at most once per activation. `HealthComponent.grant_invulnerability()` is used for dodges, respawns and cutscenes.
 - `EnemyBase` builds its own components in code. Use `configure(params)` before `add_child`. Bosses use `stagger_resist` and the `BossBase` signals (`boss_engaged/health_updated/status_changed/defeated`).
 - Chapters are data in `LevelRegistry`. `CampaignLevel` runs the objectives (reach, defeat_tag, defeat_boss, thief_cornered, collect, break_tag, rescue, escape, scripted). Checkpoints store the objective index. Retry always reloads the **current** chapter.
@@ -62,5 +73,5 @@ python3 -m http.server 8000 --directory build/web
 Preset "Android": arm64-v8a, landscape, `com.nightslinger.prototype`. Still needed: OpenJDK 17, Android SDK (platforms;android-34, build-tools;34.0.0), and the SDK path plus debug keystore in Editor Settings. Never commit keystores.
 
 ## 8. Known limitations
-- Art and music are procedural originals from `tools/`, not hand-made. Swap the PNG strips while keeping the frame layout.
+- Art and music are procedural originals from `tools/`, not hand-made. Characters are pre-rendered 3D-look sprites (not real 3D models). Backgrounds are still 2D painted layers. Swap atlas PNGs while keeping the frame grid.
 - Ceiling crawl needs flat ceilings. Mobile touch and the APK are untested on a device.

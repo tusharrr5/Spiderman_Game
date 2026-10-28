@@ -32,6 +32,12 @@ const GRAVITY: float = 690.0
 ## Falling below this y (set by the level builder to the level's pit depth) counts as defeated,
 ## so knocked-off enemies can never block a "defeat the group" objective.
 @export var kill_y: float = 100000.0
+## Chance to raise a guard against an incoming light attack (heavies, finishers and specials break it).
+@export var guard_chance: float = 0.0
+
+## Player light attacks an enemy may block; everything else (webs, hazards, scripted damage) passes through.
+const GUARDABLE: Array[String] = ["jab_1", "cross_2", "kick", "dash_strike"]
+const GUARD_BREAKERS: Array[String] = ["heavy", "spider_finisher", "web_slam_special", "sp2_whirl", "sp3_flurry", "sp3_final", "thrown_object", "explosion"]
 
 var sprite: SpriteAnimator
 var health_component: HealthComponent
@@ -51,6 +57,8 @@ var _flash_timer: float = 0.0
 var _patrol_min_x: float = 0.0
 var _patrol_max_x: float = 0.0
 var _anim_clock: float = 0.0
+var _guard_timer: float = 0.0
+var _guard_broken: bool = false
 
 
 func _ready() -> void:
@@ -97,6 +105,7 @@ func _build_components() -> void:
 	add_child(hurtbox)
 	hurtbox.owner_actor = self
 	hurtbox.health_component = health_component
+	hurtbox.guard = _guard_hit
 
 	attack_hitbox = HitboxComponent.new()
 	attack_hitbox.name = "AttackHitbox"
@@ -224,6 +233,8 @@ func _physics_process(delta: float) -> void:
 		_update_visuals(delta)
 		return
 	_anim_clock += delta
+	if _guard_timer > 0.0:
+		_guard_timer -= delta
 	if _cooldown_timer > 0.0:
 		_cooldown_timer = maxf(0.0, _cooldown_timer - delta)
 	if not flying and not is_on_floor():
@@ -341,6 +352,55 @@ func get_active_player() -> PlayerController:
 	return null
 
 
+# ------------------------------------------------------------------ guard & parry
+## Hurtbox guard hook: enemies sometimes block light hits; heavy hits shatter the guard.
+func _guard_hit(damage: int, _knockback: Vector2, attack_type: String, attacker: Node) -> int:
+	if state == AIState.DEFEATED or not (attack_type in GUARDABLE or attack_type in GUARD_BREAKERS):
+		return damage
+	var guarding := _guard_timer > 0.0
+	if not guarding and guard_chance > 0.0 and state in [AIState.CHASE, AIState.RECOVER, AIState.PATROL]:
+		var facing_attacker := true
+		if attacker is Node2D:
+			facing_attacker = signf((attacker as Node2D).global_position.x - global_position.x) == facing_dir
+		guarding = facing_attacker and randf() < guard_chance
+	if not guarding:
+		return damage
+	if attack_type in GUARD_BREAKERS:
+		_guard_timer = 0.0
+		_guard_broken = true
+		Fx.popup_text(get_parent(), global_position + Vector2(0, -body_size.y - 10), "GUARD BREAK!", Color(1, 0.55, 0.3), 10)
+		Audio.play_sfx("heavy_hit", 0.9)
+		return int(round(damage * 1.25))
+	_guard_timer = 0.5
+	velocity.x = -facing_dir * 55.0
+	status_label.text = "BLOCK"
+	Fx.burst(get_parent(), global_position + Vector2(facing_dir * 10.0, -6.0), Color(0.75, 0.85, 1.0), 6, 70.0, 0.0, 0.2)
+	Audio.play_sfx("hit", 0.45)
+	return -1
+
+
+## Called by the player's guard when this enemy's strike is parried.
+func apply_parry_stun(duration: float) -> void:
+	if state == AIState.DEFEATED:
+		return
+	attack_hitbox.deactivate()
+	_flash_timer = 0.15
+	Fx.popup_text(get_parent(), global_position + Vector2(0, -body_size.y - 10), "STUNNED", Color(0.6, 0.9, 1.0), 10)
+	if stagger_resist:
+		_cooldown_timer = maxf(_cooldown_timer, duration)
+		_on_parried(duration)
+		return
+	state = AIState.HURT
+	_state_timer = duration
+	velocity = Vector2(-facing_dir * 90.0, -40.0)
+	sprite.play("hurt", true)
+
+
+## Bosses override to enter their own vulnerable state.
+func _on_parried(_duration: float) -> void:
+	pass
+
+
 # ------------------------------------------------------------------ damage & defeat
 func _on_hit_received(damage: int, knockback: Vector2, attack_type: String, stun_duration: float) -> void:
 	if state == AIState.DEFEATED:
@@ -358,7 +418,8 @@ func _on_hit_received(damage: int, knockback: Vector2, attack_type: String, stun
 		sprite.play("webbed" if sprite.has_anim("webbed") else "hurt", true)
 	else:
 		state = AIState.HURT
-		_state_timer = maxf(0.24, stun_duration)
+		_state_timer = maxf(0.24, stun_duration) + (0.7 if _guard_broken else 0.0)
+		_guard_broken = false
 		status_label.text = ""
 		sprite.play("hurt", true)
 
@@ -408,5 +469,7 @@ func _update_visuals(delta: float) -> void:
 		sprite.modulate = Color(1.0, 0.85 + 0.15 * sin(_anim_clock * 30.0), 0.6, 1.0)
 	elif state == AIState.SNARED:
 		sprite.modulate = Color(0.8, 0.95, 1.0, 1.0)
+	elif _guard_timer > 0.0:
+		sprite.modulate = Color(0.75, 0.85, 1.15, 1.0)
 	else:
 		sprite.modulate = Color(1, 1, 1, 1)

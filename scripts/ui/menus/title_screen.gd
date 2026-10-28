@@ -1,5 +1,6 @@
 extends Control
-## Title screen: Continue / New Game, Level Select, Controls, Credits, Quit (desktop only).
+## Title screen: STORY MODE (continue / new game / level select), VERSUS (1v1 / 3v3), Night Arena,
+## Upgrades & Suits, Controls, Credits, Quit (desktop only).
 
 var _controls: PanelContainer
 var _confirm: ConfirmationDialog
@@ -24,24 +25,34 @@ func _ready() -> void:
 	tag.position = Vector2(30, 108)
 	add_child(tag)
 
+	# main menu: STORY MODE opens the campaign sub-menu; VERSUS is the 1v1 / 3v3 fighting mode
 	var vb := VBoxContainer.new()
+	vb.name = "MainMenu"
 	vb.position = Vector2(30, 140)
 	vb.add_theme_constant_override("separation", 7)
 	add_child(vb)
-	var first: Button
-	if GameState.has_any_progress():
-		var cont := UIKit.button("CONTINUE  -  CHAPTER %d" % GameState.highest_unlocked)
-		cont.pressed.connect(func() -> void: GameState.start_level(GameState.highest_unlocked))
-		vb.add_child(cont)
-		first = cont
-	var newg := UIKit.button("NEW GAME" if not GameState.has_any_progress() else "PLAY FROM CHAPTER 1")
-	newg.pressed.connect(func() -> void: GameState.start_level(1))
-	vb.add_child(newg)
-	if first == null:
-		first = newg
-	var sel := UIKit.button("LEVEL SELECT")
-	sel.pressed.connect(GameState.goto_level_select)
-	vb.add_child(sel)
+	var story_vb := VBoxContainer.new()
+	story_vb.name = "StoryMenu"
+	story_vb.position = Vector2(30, 140)
+	story_vb.add_theme_constant_override("separation", 7)
+	story_vb.visible = false
+	add_child(story_vb)
+
+	var story := UIKit.button("STORY MODE")
+	story.name = "StoryButton"
+	vb.add_child(story)
+	var versus := UIKit.button("VERSUS  1v1 / 3v3")
+	versus.name = "VersusButton"
+	versus.pressed.connect(GameState.goto_versus_setup)
+	vb.add_child(versus)
+	var arena := UIKit.button("NIGHT ARENA" if GameState.is_arena_unlocked() else "NIGHT ARENA  (clear Ch.1)")
+	arena.name = "ArenaButton"
+	arena.disabled = not GameState.is_arena_unlocked()
+	arena.pressed.connect(GameState.goto_arena_hub)
+	vb.add_child(arena)
+	var shop := UIKit.button("UPGRADES & SUITS")
+	shop.pressed.connect(GameState.goto_shop)
+	vb.add_child(shop)
 	var ctr := UIKit.button("CONTROLS")
 	ctr.pressed.connect(func() -> void: _controls.visible = true)
 	vb.add_child(ctr)
@@ -52,6 +63,39 @@ func _ready() -> void:
 		var quit := UIKit.button("QUIT")
 		quit.pressed.connect(func() -> void: get_tree().quit())
 		vb.add_child(quit)
+	var first: Button = story
+
+	var story_title := UIKit.label("STORY MODE", 12, Color(1, 0.85, 0.45), 4)
+	story_vb.add_child(story_title)
+	var story_first: Button
+	if GameState.has_any_progress():
+		var cont := UIKit.button("CONTINUE  -  CHAPTER %d" % GameState.highest_unlocked)
+		cont.pressed.connect(func() -> void: GameState.start_level(GameState.highest_unlocked))
+		story_vb.add_child(cont)
+		story_first = cont
+	var newg := UIKit.button("NEW GAME" if not GameState.has_any_progress() else "PLAY FROM CHAPTER 1")
+	newg.name = "NewGameButton"
+	newg.pressed.connect(func() -> void: GameState.start_level(1))
+	story_vb.add_child(newg)
+	if story_first == null:
+		story_first = newg
+	var sel := UIKit.button("LEVEL SELECT")
+	sel.pressed.connect(GameState.goto_level_select)
+	story_vb.add_child(sel)
+	var back := UIKit.button("BACK")
+	story_vb.add_child(back)
+	story.pressed.connect(func() -> void:
+		vb.visible = false
+		story_vb.visible = true
+		story_first.grab_focus())
+	back.pressed.connect(func() -> void:
+		story_vb.visible = false
+		vb.visible = true
+		story.grab_focus())
+	var tok := UIKit.label("TOKENS %d   |   STARS %d / 15" % [GameState.tokens, GameState.total_stars()], 9, Color(1, 0.85, 0.35), 4)
+	tok.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	tok.position = Vector2(-200, 12)
+	add_child(tok)
 
 	var ver := UIKit.label("v1.0  |  Unofficial fan project  |  Built with Godot", 7, Color(0.7, 0.72, 0.85), 3)
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -74,8 +118,10 @@ func _build_controls_panel() -> void:
 	vb.add_child(UIKit.label("CONTROLS", 16, Color(1, 0.88, 0.45)))
 	var rows := [
 		["Move", "A / D  or  Arrow keys"], ["Jump / Super Jump", "SPACE  /  W + SPACE"], ["Climb walls & ceilings", "Run into walls, hold W"],
-		["Punch combo / Kick", "J (x3)  /  H"], ["Web shot / Web swing", "K  (in the air near an anchor = swing)"],
-		["Throw crate / Web slam", "L"], ["Dodge roll", "SHIFT"], ["Suit swap / Pause", "C  /  ESC"],
+		["Punch combo / Kick", "J (x3)  /  H     Heavy: hold J"], ["Block / Parry", "hold S  /  block just before a hit lands"],
+		["Web shot / Web swing", "K  (in the air near an anchor = swing)"],
+		["Specials (power meter)", "L = 1 bar,  W+L = 2 bars,  S+L = 3 bars"], ["Throw crate", "L near a crate"],
+		["Dodge / Dash strike", "SHIFT  /  SHIFT then J"], ["Suit swap / Pause", "C  /  ESC"],
 		["Touch", "On-screen pads appear in every chapter"],
 	]
 	var grid := GridContainer.new()
@@ -95,3 +141,6 @@ func _build_controls_panel() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_game") and _controls.visible:
 		_controls.visible = false
+	elif event.is_action_pressed("pause_game") and has_node("StoryMenu") and get_node("StoryMenu").visible:
+		get_node("StoryMenu").visible = false
+		get_node("MainMenu").visible = true

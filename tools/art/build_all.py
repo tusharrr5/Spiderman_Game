@@ -25,6 +25,15 @@ def out(*parts):
 
 
 def build_characters():
+    """Volumetric (pre-rendered 3D look) character sheets; see vol_build.py."""
+    import vol_build
+    db = vol_build.build(out("assets", "sprites", "characters", "x")[:-2])
+    vol_build.write_db(db, out("scripts", "data", "sprite_db.gd"))
+    print("characters:", {k: v["count"] for k, v in db.items()})
+
+
+def build_characters_flat():
+    """Previous flat cel-shaded sheets (kept for reference; not used by the game)."""
     db = {}
     for key, style in (("hero_classic", hero_art.CLASSIC), ("hero_dark", hero_art.DARK)):
         frames, man = hero_art.render_sheet(style)
@@ -116,36 +125,35 @@ def captain_decorate(cv, sk, body, st, layer):
 
 
 PORTRAITS = {
-    "hero": (hero_art.HERO_BODY, hero_art.CLASSIC, hero_art.hero_decorate, Pose(torso=4, head=-6, arm_f=(20, 60), arm_b=(-15, 40))),
-    "hero_dark": (hero_art.HERO_BODY, hero_art.DARK, hero_art.hero_decorate, Pose(torso=4, head=-6, arm_f=(20, 60), arm_b=(-15, 40))),
-    "hero_injured": (hero_art.HERO_BODY, hero_art.CLASSIC, hero_art.hero_decorate, Pose(torso=18, head=16, arm_f=(40, 100), arm_b=(10, 60))),
-    "mj": (cast_art.MJ_BODY, cast_art.MJ, cast_art.mj_decorate, Pose(torso=2, head=-4, arm_f=(10, 30), arm_b=(-8, 20))),
-    "mj_worried": (cast_art.MJ_BODY, cast_art.MJ, cast_art.mj_decorate, Pose(torso=10, head=12, arm_f=(70, 120), arm_b=(55, 125))),
-    "goblin": (cast_art.GOBLIN_BODY, cast_art.GOBLIN, cast_art.goblin_decorate,
-               Pose(torso=-8, head=-16, arm_f=(40, 100), arm_b=(-30, 90), extras={"glider": False, "grin": 1.5})),
-    "thief": (cast_art.THIEF_BODY, cast_art.THIEF, cast_art.thief_decorate, Pose(torso=4, head=-4, arm_f=(15, 40), arm_b=(-10, 30))),
-    "brick": (cast_art.BRICK_BODY, cast_art.BRICK, cast_art.brick_decorate, Pose(torso=6, head=-6, arm_f=(20, 70), arm_b=(-10, 50))),
-    "captain": (cast_art.THUG_BODY, CAPTAIN, captain_decorate, Pose(torso=2, head=-4, arm_f=(10, 30), arm_b=(-8, 20))),
+    "hero": ("hero", Pose(torso=4, head=-6, arm_f=(20, 60), arm_b=(-15, 40))),
+    "hero_dark": ("hero_dark", Pose(torso=4, head=-6, arm_f=(20, 60), arm_b=(-15, 40))),
+    "hero_injured": ("hero", Pose(torso=18, head=16, arm_f=(40, 100), arm_b=(10, 60))),
+    "mj": ("mj", Pose(torso=2, head=-4, arm_f=(10, 30), arm_b=(-8, 20))),
+    "mj_worried": ("mj", Pose(torso=10, head=12, arm_f=(70, 120), arm_b=(55, 125))),
+    "goblin": ("goblin", Pose(torso=-8, head=-16, arm_f=(40, 100), arm_b=(-30, 90), extras={"glider": False, "grin": 1.5})),
+    "thief": ("thief", Pose(torso=4, head=-4, arm_f=(15, 40), arm_b=(-10, 30))),
+    "brick": ("brick", Pose(torso=6, head=-6, arm_f=(20, 70), arm_b=(-10, 50))),
+    "captain": ("captain", Pose(torso=2, head=-4, arm_f=(10, 30), arm_b=(-8, 20))),
 }
 
 
 def portrait(name, size=256):
-    body, style, deco, pose = PORTRAITS[name]
-    frame = 128
-    k = 4
-    img = draw_character(body, pose, style, deco, frame=frame, out_scale=k)
-    sk = Skeleton(body, pose, frame)
+    import vol_build
+    key, pose = PORTRAITS[name]
+    frame, k = 128, 4
+    img, sk = vol_build.render_still(key, pose, frame, k)
     hx, hy = sk.head
-    half = 22
-    box = (int((hx - half + 3) * k), int((hy - 16) * k), int((hx + half + 3) * k), int((hy - 16 + half * 2) * k))
+    half = 13.5
+    box = (int((hx - half + 2.5) * k), int((hy - half + 1.5) * k), int((hx + half + 2.5) * k), int((hy + half + 1.5) * k))
     crop = img.crop(box).resize((size, size), Image.LANCZOS)
     bg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     bg.alpha_composite(crop)
     return bg
 
 
-def char_big(body, style, deco, pose, frame=96, k=3):
-    return draw_character(body, pose, style, deco, frame=frame, out_scale=k)
+def char_big(key, pose, frame=96, k=3):
+    import vol_build
+    return vol_build.render_still(key, pose, frame, k)[0]
 
 
 def backdrop(theme, w=1280, h=720, darken=1.0):
@@ -192,11 +200,7 @@ def explosion(img, c, r):
 
 def build_story():
     P = Pose
-    H = (hero_art.HERO_BODY, hero_art.CLASSIC, hero_art.hero_decorate)
-    G = (cast_art.GOBLIN_BODY, cast_art.GOBLIN, cast_art.goblin_decorate)
-    M = (cast_art.MJ_BODY, cast_art.MJ, cast_art.mj_decorate)
-    T = (cast_art.THIEF_BODY, cast_art.THIEF, cast_art.thief_decorate)
-    B = (cast_art.BRICK_BODY, cast_art.BRICK, cast_art.brick_decorate)
+    H, G, M, T, B = ("hero",), ("goblin",), ("mj",), ("thief",), ("brick",)
     panels = {}
 
     img = backdrop("street_dusk")
@@ -290,9 +294,33 @@ def build_portraits():
     for name in PORTRAITS:
         portrait(name).save(out("assets", "portraits", name + ".png"))
     print("portraits:", list(PORTRAITS))
+    build_versus_portraits()
+
+
+def build_versus_portraits():
+    """Head-and-shoulders portraits for the 18 versus-only variants (sv_*.png)."""
+    import vol_build
+    import spiderverse
+    pose = Pose(torso=4, head=-6, arm_f=(20, 60), arm_b=(-15, 40))
+    for k in spiderverse.VARIANTS:
+        img, sk = vol_build.render_still("sv_" + k, pose, 128, 4)
+        hx, hy = sk.head
+        half = 17 if k in ("peni", "ham") else 13.5
+        box = (int((hx - half + 2.5) * 4), int((hy - half + 1.5) * 4), int((hx + half + 2.5) * 4), int((hy + half + 1.5) * 4))
+        bg = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        bg.alpha_composite(img.crop(box).resize((256, 256), Image.LANCZOS))
+        bg.save(out("assets", "portraits", "sv_%s.png" % k))
+    print("versus portraits:", len(spiderverse.VARIANTS))
 
 
 if __name__ == "__main__":
+    if "--chars-only" in sys.argv:
+        build_characters()
+        sys.exit(0)
+    if "--stills-only" in sys.argv:
+        build_portraits()
+        build_story()
+        sys.exit(0)
     build_characters()
     build_environment()
     build_portraits()

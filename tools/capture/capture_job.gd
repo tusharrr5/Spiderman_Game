@@ -23,6 +23,14 @@ func run(p_tree: SceneTree, p_out: String) -> void:
 	await _menu("res://scenes/menus/level_select.tscn", "01_level_select")
 	GameState.pending_story = "ch4_intro"
 	await _menu("res://scenes/menus/story_scene.tscn", "02_story", 50)
+	GameState.tokens = 1450
+	GameState.arena_best = {"gauntlet": 2, "survival": 11, "survival_score": 8420}
+	GameState.chapter_rank = {1: "S", 2: "A"}
+	GameState.chapter_stars = {1: 3, 2: 3}
+	await _menu("res://scenes/menus/arena_hub.tscn", "03_arena_hub")
+	await _menu("res://scenes/menus/shop.tscn", "04_shop")
+	await _arena_shot()
+	await _versus_shots()
 
 	var shots := [
 		[1, Vector2(320, 284), "", "10_ch1_start"],
@@ -39,6 +47,61 @@ func run(p_tree: SceneTree, p_out: String) -> void:
 	for s in shots:
 		await _level_shot(s[0], s[1], s[2], s[3])
 	print("captures written to ", ProjectSettings.globalize_path(out_dir))
+
+
+func _versus_shots() -> void:
+	GameState.versus_stats = {"wins": 14, "losses": 5, "streak": 4, "best_streak": 7}
+	GameState.char_wins = {"miles": 6, "gwen": 4, "noir": 3}
+	GameState.versus_config = {"mode": "3v3", "difficulty": "difficult"}
+	var setup: Control = load("res://scenes/menus/versus_setup.tscn").instantiate()
+	tree.root.add_child(setup)
+	for _i in range(15):
+		await tree.process_frame
+	await _save("70_versus_setup")
+	(setup.find_child("Next", true, false) as Button).pressed.emit()
+	for k in ["miles", "gwen", "noir"]:
+		(setup.find_child("Pick_" + k, true, false) as Button).pressed.emit()
+	(setup.find_child("Pick_peni", true, false) as Button).grab_focus()
+	for _i in range(15):
+		await tree.process_frame
+	await _save("71_fighter_select")
+	setup.queue_free()
+	await tree.process_frame
+	var v := VersusLevel.new()
+	v.config = {"mode": "cpu", "difficulty": "difficult", "stage": "storm_finale", "team1": ["miles", "gwen", "peni"],
+		"team2": ["noir", "2099", "punk"], "cpu_vs_cpu": true, "ai_seed": 4}
+	tree.root.add_child(v)
+	for _i in range(330):
+		await tree.physics_frame
+	await _save("72_versus_fight")
+	v.queue_free()
+	await tree.process_frame
+	v = VersusLevel.new()
+	v.config = {"mode": "1v1", "difficulty": "more_difficult", "stage": "rooftop_sunset", "team1": ["ham"], "team2": ["iron"],
+		"cpu_vs_cpu": true, "ai_seed": 8}
+	tree.root.add_child(v)
+	for _i in range(260):
+		await tree.physics_frame
+	await _save("73_versus_1v1")
+	v.queue_free()
+	await tree.process_frame
+
+
+func _arena_shot() -> void:
+	var a := ArenaLevel.new()
+	a.mode = "gauntlet"
+	a.tier = 3
+	tree.root.add_child(a)
+	a.hud.set_touch_visible(false)
+	for _i in range(150):
+		await tree.physics_frame
+	a.player.set_meter(250.0)
+	a.player.sprite.play("heavy", true)
+	for _i in range(8):
+		await tree.process_frame
+	await _save("60_arena_fight")
+	a.queue_free()
+	await tree.process_frame
 
 
 func _save(name: String) -> void:

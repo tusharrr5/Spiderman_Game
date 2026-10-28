@@ -49,7 +49,7 @@ func _process(_delta: float) -> void:
 		_label.modulate.a = 0.55 + 0.45 * sin(Time.get_ticks_msec() * 0.006)
 
 
-func receive_hit(_damage: int, _knockback: Vector2, _attack_type: String = "melee", _stun_duration: float = 0.25) -> bool:
+func receive_hit(_damage: int, _knockback: Vector2, _attack_type: String = "melee", _stun_duration: float = 0.25, _attacker: Node = null) -> bool:
 	if is_broken:
 		return false
 	_hits += 1

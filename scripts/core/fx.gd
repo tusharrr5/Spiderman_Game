@@ -42,6 +42,13 @@ func shake(strength: float = 3.0, duration: float = 0.15) -> void:
 		_shake_time = duration
 
 
+## Lets the camera director move the resting camera offset; shake is applied on top of it.
+func set_camera_base(cam: Camera2D, offset: Vector2) -> void:
+	_base_offsets[cam.get_instance_id()] = offset
+	if _shake_time <= 0.0:
+		cam.offset = offset
+
+
 func flash(color: Color = Color(1, 1, 1, 0.6), duration: float = 0.18) -> void:
 	_flash_rect.color = color
 	var tw := create_tween()

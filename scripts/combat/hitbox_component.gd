@@ -66,7 +66,7 @@ func _on_area_entered(area: Area2D) -> void:
 		if _hit_registry.has(id):
 			return
 		var kb := Vector2(abs(base_knockback.x) * facing_sign, base_knockback.y)
-		if hurtbox.receive_hit(damage, kb, attack_type, stun_duration):
+		if hurtbox.receive_hit(damage, kb, attack_type, stun_duration, owner_actor):
 			_hit_registry[id] = true
 			hit_landed.emit(target, damage, attack_type)
 
@@ -77,8 +77,15 @@ func _on_body_entered(body: Node2D) -> void:
 	var id := body.get_instance_id()
 	if _hit_registry.has(id):
 		return
+	var kb := Vector2(abs(base_knockback.x) * facing_sign, base_knockback.y)
+	# actors with a hurtbox receive the hit through it so guards know who attacked
+	var hb: Variant = body.get("hurtbox")
+	if hb is HurtboxComponent:
+		if (hb as HurtboxComponent).receive_hit(damage, kb, attack_type, stun_duration, owner_actor):
+			_hit_registry[id] = true
+			hit_landed.emit(body, damage, attack_type)
+		return
 	if body.has_method("apply_combat_hit"):
-		var kb := Vector2(abs(base_knockback.x) * facing_sign, base_knockback.y)
 		if body.apply_combat_hit(damage, kb, attack_type, stun_duration):
 			_hit_registry[id] = true
 			hit_landed.emit(body, damage, attack_type)
