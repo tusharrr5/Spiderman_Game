@@ -25,6 +25,9 @@ var _name: Label
 var _bars: Dictionary = {}
 var _hint: Label
 var _rng := RandomNumberGenerator.new()
+var chosen_boosts: Array = []
+var _boost_btns: Dictionary = {}
+var _synergy: Label
 
 
 func _ready() -> void:
@@ -169,8 +172,17 @@ func _build_page2() -> void:
 		var wins := int(GameState.char_wins.get(key, 0))
 		if wins > 0:
 			var star := UIKit.label("★%d" % wins, 7, Color(1, 0.85, 0.3), 3)
-			star.position = Vector2(2, 44)
+			star.position = Vector2(2, 42)
 			b.add_child(star)
+		var lv := UIKit.label("LV%d" % GameState.fighter_level(key), 6, Color(0.9, 0.95, 1.0), 3)
+		lv.position = Vector2(2, 0)
+		b.add_child(lv)
+		var strip := ColorRect.new()
+		strip.color = SpiderRoster.CLASS_COLORS[SpiderRoster.class_of(key)]
+		strip.position = Vector2(3, 51)
+		strip.size = Vector2(50, 2)
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(strip)
 		grid.add_child(b)
 		_cells[key] = b
 	# preview + info
@@ -228,6 +240,31 @@ func _build_page2() -> void:
 	_hint = UIKit.label("", 8, Color(1, 0.85, 0.4), 3)
 	_hint.position = Vector2(140, 300)
 	_page2.add_child(_hint)
+	_synergy = UIKit.label("", 6, Color(0.6, 1.0, 0.7), 3)
+	_synergy.position = Vector2(566, 172)
+	_synergy.size = Vector2(70, 54)
+	_synergy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_page2.add_child(_synergy)
+	# pre-fight boosts (consumables): pick up to two
+	var brow := HBoxContainer.new()
+	brow.position = Vector2(404, 296)
+	brow.add_theme_constant_override("separation", 2)
+	_page2.add_child(brow)
+	for bk in GameState.BOOSTS:
+		var bb := UIKit.button("", 7, Vector2(44, 17))
+		KeyBindPanel._compact(bb)
+		bb.name = "Boost_" + bk
+		bb.toggle_mode = true
+		bb.tooltip_text = "%s: %s" % [GameState.BOOSTS[bk][0], GameState.BOOSTS[bk][1]]
+		bb.pressed.connect(_toggle_boost.bind(bk))
+		bb.focus_entered.connect(func() -> void: _hint.text = bb.tooltip_text)
+		bb.mouse_entered.connect(func() -> void: _hint.text = bb.tooltip_text)
+		brow.add_child(bb)
+		_boost_btns[bk] = bb
+	var boost_title := UIKit.label("BOOSTS  (pick up to 2, used up when the fight starts)", 6, Color(0.8, 0.85, 1.0), 3)
+	boost_title.position = Vector2(410, 285)
+	_page2.add_child(boost_title)
+	_refresh_boosts()
 	var row := HBoxContainer.new()
 	row.position = Vector2(20, 316)
 	row.add_theme_constant_override("separation", 8)
@@ -276,7 +313,11 @@ func _show_info(key: String) -> void:
 	(_bars["SPEED"] as ColorRect).size.x = 90.0 * clampf((float(i["speed"]) - 0.75) / 0.5, 0.1, 1.0)
 	(_bars["DEFENSE"] as ColorRect).size.x = 90.0 * clampf((1.25 - float(i["defense"])) / 0.45, 0.1, 1.0)
 	var sp: Array = i["specials"]
-	_info.text = "%s\nPASSIVE  %s\nSPECIALS  %s / %s / %s%s" % [i["tagline"], SpiderRoster.PASSIVES.get(String(i["passive"]), ""),
+	var cls := SpiderRoster.class_of(key)
+	var beats := SpiderRoster.CLASS_ORDER[(SpiderRoster.CLASS_ORDER.find(cls) + 1) % SpiderRoster.CLASS_ORDER.size()]
+	_name.text = "%s   LV %d" % [String(i["name"]), GameState.fighter_level(key)]
+	_info.text = "%s  |  %s class (strong vs %s)\nPASSIVE  %s\nABILITY  %s\nSPECIALS  %s / %s / %s%s" % [i["tagline"], cls, beats,
+		SpiderRoster.PASSIVES.get(String(i["passive"]), ""), SpiderRoster.sig_text(key),
 		sp[0], sp[1], sp[2], "\n(1-bar special is a ranged energy blast)" if String(i["style"]) == "blast" else ""]
 
 
@@ -314,6 +355,9 @@ func _refresh_team() -> void:
 	for key in _cells:
 		(_cells[key] as Button).modulate = Color(0.55, 0.85, 1.0) if key in picks else Color(1, 1, 1)
 	_fight.disabled = picks.size() < team_size()
+	if _synergy != null:
+		var syn: Array = SpiderRoster.team_synergies(picks) if team_size() > 1 else []
+		_synergy.text = "" if syn.is_empty() else "SYNERGY\n" + "\n".join(syn.map(func(s: Array) -> String: return "%s: %s" % [s[0], s[1]]))
 	_hint.text = "Pick %d more" % (team_size() - picks.size()) if picks.size() < team_size() else "Ready! The bot will now draft its team."
 
 
@@ -336,11 +380,31 @@ func start_match() -> void:
 	_fight.disabled = true
 	Audio.play_sfx("boss_warn", 0.7)
 	var cfg := {"mode": mode, "difficulty": difficulty, "stage": stage, "team1": picks.duplicate(), "team2": bot_picks.duplicate(),
-		"cpu_vs_cpu": mode == "cpu"}
+		"cpu_vs_cpu": mode == "cpu", "boosts": chosen_boosts.duplicate() if mode != "cpu" else []}
 	GameState.versus_config = cfg
 	await get_tree().create_timer(1.2).timeout
 	if is_inside_tree():
 		GameState.start_versus(cfg)
+
+
+func _toggle_boost(key: String) -> void:
+	if key in chosen_boosts:
+		chosen_boosts.erase(key)
+	elif int(GameState.boosts.get(key, 0)) > 0:
+		if chosen_boosts.size() >= GameState.MAX_BOOSTS_PER_FIGHT:
+			chosen_boosts.pop_front()
+		chosen_boosts.append(key)
+	_refresh_boosts()
+
+
+func _refresh_boosts() -> void:
+	for k in _boost_btns:
+		var b: Button = _boost_btns[k]
+		var n := int(GameState.boosts.get(k, 0))
+		b.text = "%s x%d" % [{"attack": "ATK", "defense": "DEF", "power": "PWR", "crit": "CRT", "health": "HP"}.get(k, "?"), n]
+		b.disabled = n <= 0 and not k in chosen_boosts
+		b.set_pressed_no_signal(k in chosen_boosts)
+		b.modulate = GameState.BOOSTS[k][3] if k in chosen_boosts else Color(1, 1, 1)
 
 
 func _unhandled_input(event: InputEvent) -> void:

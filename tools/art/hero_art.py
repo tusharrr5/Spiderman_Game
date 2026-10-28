@@ -257,6 +257,28 @@ def hero_animations():
         P(torso=-4, head=-12, arm_f=(176, 2), arm_b=(-36, 62), leg_f=(30, -60), leg_b=(-8, -30), grounded=False,
           pelvis=(48, 50)),
     ]))
+    # fighting-game set: 5-hit chain (jab, cross, hook, roundhouse, finisher), guard stance, entrance
+    anims.append(("hook", 16, False, [
+        P(torso=0, head=-6, arm_f=(40, 100), arm_b=(30, 115), leg_f=(28, -16), leg_b=(-26, -6)),
+        P(torso=26, head=-14, arm_f=(25, 110), arm_b=(88, 78), leg_f=(38, -12), leg_b=(-36, 0)),
+        P(torso=20, head=-12, arm_f=(30, 105), arm_b=(72, 62), leg_f=(34, -12), leg_b=(-30, -4)),
+    ]))
+    anims.append(("roundhouse", 14, False, [
+        P(torso=-10, head=-4, arm_f=(50, 80), arm_b=(-40, 60), leg_f=(95, -120), leg_b=(-6, -4)),
+        P(torso=-34, head=10, arm_f=(80, 50), arm_b=(-80, 30), leg_f=(118, -4), leg_b=(-8, -2)),
+        P(torso=-30, head=8, arm_f=(75, 55), arm_b=(-75, 35), leg_f=(112, -10), leg_b=(-8, -2)),
+        P(torso=4, head=-4, arm_f=(30, 80), arm_b=(-25, 60), leg_f=(30, -40), leg_b=(-14, -6)),
+    ]))
+    stance = dict(torso=10, head=-8, arm_f=(42, 112), arm_b=(22, 122), leg_f=(32, -22), leg_b=(-30, -12))
+    anims.append(("stance", 3, True, [P(**stance), P(**stance, dy=0.7)]))
+    anims.append(("intro", 5, False, [
+        P(torso=42, head=-32, arm_f=(8, 25), arm_b=(-30, 20), leg_f=(70, -120), leg_b=(-40, -112)),
+        P(torso=40, head=-28, arm_f=(10, 28), arm_b=(-28, 22), leg_f=(68, -118), leg_b=(-40, -110)),
+        P(torso=18, head=-16, arm_f=(30, 90), arm_b=(-10, 80), leg_f=(40, -50), leg_b=(-26, -40)),
+        P(torso=4, head=-10, arm_f=(100, -4), arm_b=(-25, 70), leg_f=(26, -12), leg_b=(-22, -6)),
+        P(torso=4, head=-10, arm_f=(100, -4), arm_b=(-25, 70), leg_f=(26, -12), leg_b=(-22, -6)),
+        P(**stance),
+    ]))
     return anims
 
 

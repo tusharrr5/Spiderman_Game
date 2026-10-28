@@ -47,6 +47,14 @@ var banner_label: Label
 var banner_sub: Label
 var timer_label: Label
 var controls_panel: PanelContainer
+var key_panel: KeyBindPanel
+var btn_keys: Button
+var btn_fx: Button
+## Versus has no chapters: it hides RESTART CHAPTER and labels retry as REMATCH
+var show_restart_level: bool = true
+## Online matches keep running while the menu is open (the other player is still playing)
+var pause_tree: bool = true
+var _guide_body: Label
 var btn_dodge: Button
 var btn_restart_level: Button
 var btn_menu: Button
@@ -151,9 +159,12 @@ func _build_campaign_widgets() -> void:
 		restart_level_requested.emit())
 	btn_controls = _overlay_button("CONTROLS", hbox)
 	btn_controls.pressed.connect(func() -> void: show_controls_guide(false))
+	btn_keys = _overlay_button("KEYS", hbox)
+	btn_keys.name = "BtnKeys"
+	btn_keys.pressed.connect(func() -> void: key_panel.open())
 	btn_touch_toggle = _overlay_button("TOUCH: ON", hbox)
 	btn_touch_toggle.pressed.connect(func() -> void: set_touch_visible(not touch_container.visible))
-	var btn_fx := _overlay_button("FX: " + GameState.fx_quality.to_upper(), hbox)
+	btn_fx = _overlay_button("FX: " + GameState.fx_quality.to_upper(), hbox)
 	btn_fx.pressed.connect(func() -> void:
 		GameState.fx_quality = "low" if GameState.fx_quality == "high" else "high"
 		GameState.save_game()
@@ -166,6 +177,26 @@ func _build_campaign_widgets() -> void:
 	for b in [btn_restart_level, btn_menu]:
 		b.visible = false
 	_build_controls_panel(root)
+	key_panel = KeyBindPanel.new()
+	root.add_child(key_panel)
+	key_panel.closed.connect(_refresh_key_texts)
+	_refresh_key_texts()
+
+
+## Button captions and help text follow the player's own key bindings.
+func _refresh_key_texts() -> void:
+	if btn_suit.text.begins_with("SUIT"):
+		btn_suit.text = "SUIT (%s)" % KeyBindings.k("suit_toggle")
+	if _guide_body != null:
+		_guide_body.text = KeyBindings.fill("MOVE  {move}            JUMP  {jump}   ({up} + {jump} = SUPER JUMP)\n"
+			+ "CLIMB  run into walls or hold {up}    CEILING  jump up into it holding {up}   ({down} drops)\n"
+			+ "PUNCH  {punch}  (tap for a combo, HOLD = guard-breaking HEAVY)    KICK  {kick}\n"
+			+ "BLOCK  hold {down}     PARRY  block just before a hit lands -> attacker is stunned\n"
+			+ "WEB  {web} shoots webs  /  in the air near an anchor = WEB SWING ({jump} releases)\n"
+			+ "SPECIALS  {special} = 1 bar   {up}+{special} = 2 bars   {down}+{special} = 3 bars    ({special} near a crate throws it)\n"
+			+ "DODGE  {dodge}  ({dodge} then {punch} = DASH STRIKE)       SUIT / TAG  {suit}       PAUSE  {pause}\n\n"
+			+ "Touch: hold DOWN to block, hold PUNCH for heavy, UP/DOWN + STAR for big specials.\n"
+			+ "Change any key in PAUSE > KEYS or CONTROLS & KEYS on the title screen.")
 
 
 func _overlay_button(text: String, parent: Control) -> Button:
@@ -199,15 +230,7 @@ func _build_controls_panel(root: Control) -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(title)
 	var body := _label(9, Color(0.92, 0.94, 1.0))
-	body.text = ("MOVE  A / D  or  Arrows            JUMP  SPACE   (W + SPACE = SUPER JUMP)\n"
-		+ "CLIMB  run into walls or hold W    CEILING  jump up into it holding W   (S drops)\n"
-		+ "PUNCH  J  (J J J combo, HOLD J = guard-breaking HEAVY)    KICK  H\n"
-		+ "BLOCK  hold S     PARRY  block just before a hit lands -> attacker is stunned\n"
-		+ "WEB  K  shoots webs  /  in the air near an anchor = WEB SWING (SPACE releases)\n"
-		+ "SPECIALS  L = 1 bar   W+L = 2 bars   S+L = 3 bars    (L near a crate throws it)\n"
-		+ "DODGE  SHIFT  (SHIFT then J = DASH STRIKE)       SUIT  C       PAUSE  ESC\n\n"
-		+ "Touch: hold DOWN to block, hold PUNCH for heavy, UP/DOWN + STAR for big specials.\n"
-		+ "Land hits, block and parry to fill the POWER meter. Clean, fast, stylish runs rank S.")
+	_guide_body = body
 	body.autowrap_mode = TextServer.AUTOWRAP_OFF
 	vb.add_child(body)
 	var ok := Button.new()
@@ -218,7 +241,7 @@ func _build_controls_panel(root: Control) -> void:
 	ok.pressed.connect(_close_controls_guide)
 	vb.add_child(ok)
 	var tap_hint := _label(7, Color(0.7, 0.75, 0.9))
-	tap_hint.text = "Tap anywhere on this panel, or press SPACE / ENTER / ESC to continue"
+	tap_hint.text = "Tap anywhere on this panel, or press JUMP / ENTER / PAUSE to continue"
 	tap_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(tap_hint)
 	# the whole panel dismisses on release so a single tap always works, even on a freshly shown panel
@@ -233,6 +256,7 @@ var _guide_paused_game: bool = false
 
 
 func show_controls_guide(pause_game: bool = true) -> void:
+	_refresh_key_texts()
 	controls_panel.visible = true
 	if pause_game and not get_tree().paused:
 		_guide_paused_game = true
@@ -337,7 +361,7 @@ func _apply_visual_style() -> void:
 	vbox.offset_right = 300.0
 	($RootControl/OverlayPanel/VBox/HBoxButtons as HBoxContainer).add_theme_constant_override("separation", 6)
 	overlay_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	for b in [resume_button, retry_button, btn_restart_level, btn_menu, btn_controls, btn_touch_toggle]:
+	for b in [resume_button, retry_button, btn_restart_level, btn_menu, btn_controls, btn_keys, btn_fx, btn_touch_toggle]:
 		if b == null:
 			continue
 		b.custom_minimum_size = Vector2(maxf(66.0, b.custom_minimum_size.x * 0.0), 24)
@@ -514,8 +538,9 @@ func hide_boss_hud() -> void:
 func toggle_pause_menu() -> void:
 	if _is_game_over_state:
 		return
-	var next_paused := not get_tree().paused
-	get_tree().paused = next_paused
+	var next_paused := not overlay_panel.visible if not pause_tree else not get_tree().paused
+	if pause_tree:
+		get_tree().paused = next_paused
 	overlay_panel.visible = next_paused
 	if get_viewport() != null:
 		get_viewport().gui_release_focus()
@@ -523,7 +548,7 @@ func toggle_pause_menu() -> void:
 		release_all_touch_actions()
 		overlay_title.text = "PAUSED"
 		_show_campaign_buttons(true)
-		overlay_subtitle.text = "A/D: Move | Space: Jump | W+Space: Super Jump | W: Climb/Ceiling\nJ: Punch/Combo | H: Kick | K: Web Shot/Swing | L: Throw/Special | C: Suit"
+		overlay_subtitle.text = KeyBindings.fill("{move}: Move | {jump}: Jump | {up}+{jump}: Super Jump | {up}: Climb/Ceiling\n{punch}: Punch/Combo | {kick}: Kick | {web}: Web Shot/Swing | {special}: Throw/Special | {suit}: Suit")
 		resume_button.visible = true
 
 
@@ -535,7 +560,7 @@ func show_defeat_screen() -> void:
 	overlay_title.text = "HERO DEFEATED"
 	overlay_subtitle.text = "The city still needs you! Retry from the last checkpoint, or restart the chapter."
 	resume_button.visible = false
-	retry_button.text = "RETRY CHECKPOINT" if campaign_mode else "RETRY LEVEL"
+	retry_button.text = ("RETRY CHECKPOINT" if show_restart_level else "REMATCH") if campaign_mode else "RETRY LEVEL"
 	_show_campaign_buttons(true)
 
 
@@ -552,7 +577,7 @@ func show_victory_screen() -> void:
 func _show_campaign_buttons(on: bool) -> void:
 	for b in [btn_restart_level, btn_menu]:
 		if b != null:
-			b.visible = on and campaign_mode
+			b.visible = on and campaign_mode and (b != btn_restart_level or show_restart_level)
 
 
 func hide_overlays_for_reset() -> void:
@@ -569,7 +594,8 @@ func hide_overlays_for_reset() -> void:
 func _on_resume_pressed() -> void:
 	touch_button_event.emit("ResumeButton", "resume", true)
 	if not _is_game_over_state:
-		get_tree().paused = false
+		if pause_tree:
+			get_tree().paused = false
 		overlay_panel.visible = false
 		if get_viewport() != null:
 			get_viewport().gui_release_focus()

@@ -38,11 +38,20 @@ The fights take cues from fan-favourite mobile fighters like *Stickman Dragon Fi
 - **1 VS 1**: pick a fighter. The bot drafts its own fighter from the same roster.
 - **3 VS 3 (team elimination)**: pick three. The bot picks three. Fighters come in one at a time, and the first team to knock out all three opponents wins. Health and power stay with each fighter. Press **TAG** (`C`) to swap in a teammate, who dashes in with a strike (10 s cooldown). Bots on Difficult and above tag out when hurt.
 - **CPU VS CPU**: watch two bot teams fight.
-- **Difficulty**: Easy, Moderate, Difficult, More Difficult. This changes the bot's reaction time, how often it blocks and parries, its aggression, combo length, use of specials and its damage. Measured against a player who just stands there for 12 s, the bot deals about 36 / 77 / 246 / 349 damage on the four levels. Fighters have about 160 HP.
+- **Difficulty**: Easy, Moderate, Difficult, More Difficult. This changes the bot's reaction time, how often it blocks and parries, its aggression, combo length (2 to 5 hits), use of specials, its damage and its fighter level. Measured against a player who just stands there for 12 s, the bot deals roughly 60 / 130 / 150-230 / 290-400 damage on the four levels (it varies with crits and buffs). Fighters have about 180 HP.
 - **Rules**: 99-second bouts. On time-out, the fighter with less health loses the bout. KOs trigger slow-motion.
 - **The roster**: 20 Spider-Verse-inspired variants, each with its own art, stats (HP, power, speed, defense), a passive and three named specials. Six of them fire a ranged energy blast as their 1-bar special.
 
   Miles Morales, Spider-Gwen, Peter B. Parker, Spider-Man Noir, Peni & SP//dr, Spider-Ham, Spider-Man 2099, Spider-Punk, Spider-Man India, Spider-Woman, Scarlet Spider, Spider-UK, Spider-Byte, Peter Parker (classic), Symbiote Spider-Man, Iron Spider, Bombastic Bag-Man, Spider-Man '67, Advanced Suit, Cyborg Spider-Woman.
+- **Contest-of-Champions-style fighting**:
+  - **5-hit chain**: jab, cross, hook, roundhouse, finisher, each with its own animation. Landing the 5th hit grants **FURY**.
+  - **Buffs and debuffs**, shown as icons with timers under the health bar: Fury, Armor Up, Precision, Power Gain and Regeneration; Bleed, Shock (also drains power), Poison (blocks healing), Armor Break, Weakness and Stun. They stack up to 3 times.
+  - **Signature abilities**: every fighter has a signature debuff (inflicted by heavies and the last hit of SP2) and a signature buff (gained when casting SP1). SP3's final blow breaks armour.
+  - **Classes**: Science, Mystic, Cosmic, Tech and Skill. Each beats the next (Science > Mystic > Cosmic > Tech > Skill > Science) for +12% damage, shown as a green or red arrow by the class badge.
+  - **Boosts** (pre-fight items): Attack, Defense, Power, Crit and Health. Pick up to 2 on the fighter select screen; they are used up when the fight starts. Earn them from wins and daily rewards, or buy them in the shop.
+  - **Team synergies** (3v3): Into the Spider-Verse, The Peter Parkers, Spider-Gang, Spider-Society and class bonds.
+  - **Fighter levels**: each fighter earns XP and levels up to LV 10 (+2% health and attack per level).
+  - **Intros and victory poses**: fighters land into the arena at the start of each round and pose after a KO. A round won without taking damage is a **PERFECT!**
 - **Extras**:
   - **Focus charge**: hold `L` with an empty meter to power up while exposed.
   - **Passives**: healing factor, crits, armour, lifesteal, focus, haymaker, evasion and web mastery.
@@ -55,16 +64,20 @@ The fights take cues from fan-favourite mobile fighters like *Stickman Dragon Fi
   - **Gauntlet**: four rounds per tier (the gang, the Thief, Brick, the Goblin). Health carries over between rounds. Every tier is harder and pays more.
   - **Survival**: endless waves, with a boss every 5th wave. Your best wave and score are saved.
   - **Daily Challenge**: a date-seeded lineup with one rule twist (Glass Cannon, Power Surge, Iron Guard or Swarm). The first clear each day pays a streak bonus.
-- **Upgrades & Suits.** Spend tokens on Vitality, Strength, Focus (meter gain) and Reflex (parry window), five levels each. There are also three extra suits (Midnight Gold, Crimson Stealth, Arctic Tech) alongside Classic and Symbiote Black.
+- **Shop.** Spend tokens on Vitality, Strength, Focus (meter gain) and Reflex (parry window), five levels each, and on versus boosts. There are also three extra suits (Midnight Gold, Crimson Stealth, Arctic Tech) alongside Classic and Symbiote Black.
+- **Daily reward.** Opening the game each day pays tokens on a 7-day track (days 3, 5 and 7 add boosts). Keep the streak going for bigger rewards.
+- **Challenges.** 15 goals (win streaks, MORE DIFFICULT wins, parries, five-hit combos, level-3 specials, debuffs, flawless rounds, winning with 10 fighters, a level-10 fighter) that pay tokens when completed.
 
 ## Controls
 
-| Action | Keyboard | Touch |
+Every key can be changed: **CONTROLS & KEYS** on the title screen, or **PAUSE > KEYS** in game. Each action has two key slots. Click a slot and press the new key (`Esc` cancels, `Backspace` clears it). Taking a key that another action uses swaps the two, and **RESET DEFAULTS** brings back the keys below. Your keys are saved, and in-game hints show your own keys.
+
+| Action | Default keys | Touch |
 |---|---|---|
 | Move | `A` / `D` or arrow keys | ◀ ▶ |
 | Jump (variable height) / Super jump | `Space` / `W` + `Space` | ⬆ / hold ▲ + ⬆ |
 | Climb walls / crawl ceilings | run into a wall or hold `W`; jump into a ceiling while holding `W`; `S` drops | ▲ / ▼ |
-| Punch combo (jab, cross, finisher) | `J` `J` `J` (or `J` `J` `H`) | fist |
+| Punch combo (story: jab, cross, finisher; versus: 5 hits) | tap `J` (or mix in `H`) | fist |
 | Heavy (breaks guards) | hold `J` | hold fist |
 | Block / **parry** (block just before a hit lands: the attacker is stunned) | hold `S` | hold ▼ |
 | Kick | `H` | boot |
@@ -104,7 +117,7 @@ In game, a full-screen grade adds bloom, filmic contrast, split toning and a vig
 ## Tests
 
 ```bash
-# full automated suite: prototype input regression, every campaign chapter, combat + arena/economy
+# full automated suite: prototype input regression, every campaign chapter, combat + arena/economy, versus
 Godot --headless --fixed-fps 60 --path . -s res://tests/headless_test_runner.gd
 
 # parse/compile every script and scene
@@ -126,7 +139,10 @@ The versus suite covers:
 - damage scaling across the four levels;
 - 1v1 wins, and 3v3 elimination with real C-key tags (win and loss);
 - the timer, focus charge, blast specials and CPU VS CPU;
-- the Story/Versus title menu, the setup screen and fighter select with the bot's draft.
+- the Story/Versus title menu, the setup screen and fighter select with the bot's draft;
+- key rebinding: Q for web shot, swapping on conflicts, saving, a real rebound key press, the settings screen and reset;
+- the 5-hit chain into Fury, a heavy inflicting the signature debuff and Bleed ticking damage, SP1's buff and the HUD icons;
+- the class triangle, boosts being used up and applied, synergies, fighter XP and levels, challenges, the daily reward and the boost shop.
 
 The combat & replay suite drives real key events. It checks:
 - block chip damage and a timed parry;
@@ -168,15 +184,15 @@ For a release APK, create your own keystore (`keytool -genkeypair ...`), set it 
 ## Architecture
 
 ```
-scripts/core/       GameState (saves, unlocks, routing, tokens/upgrades/suits/ranks), Audio, Fx, SpriteAnimator, CombatCamera, PostFX, Scoring
+scripts/core/       GameState (saves, unlocks, routing, tokens/upgrades/suits/ranks, boosts/levels/daily/challenges), KeyBindings, Audio, Fx, SpriteAnimator, CombatCamera, PostFX, Scoring
 scripts/player/     PlayerController - explicit state machine (idle, run, jump, fall, wall climb, ceiling crawl, web swing, attack, hurt, dodge, block, defeated)
                     + fighting layer: guard/parry hook, heavy, dash strike, power meter, multi-hit specials, run stats
 scripts/combat/     Health / Hitbox (one hit per target per swing) / Hurtbox components, web & enemy projectiles, throwable crates
 scripts/enemies/    EnemyBase -> NormalEnemy (thug), GunnerEnemy, DroneEnemy;  BossBase -> ThiefBoss, GoblinBoss;  PrototypeBoss (Brick)
-scripts/versus/     VersusLevel (1v1 / 3v3 / CPU, tag, timer, KO flow, results), FighterAI (bot brain, 4 difficulty levels)
+scripts/versus/     VersusLevel (1v1 / 3v3 / CPU, tag, timer, KO flow, boosts, synergies, results), FighterAI (bot brain, 4 difficulty levels), FightEffects (buffs/debuffs)
 scripts/levels/     CampaignLevel (objectives, checkpoints, story events, weather, results), ArenaLevel (gauntlet/survival/daily), LevelBuilder
 scripts/data/       LevelRegistry (chapters), StoryData, SpiderRoster (20 versus fighters), SpriteDB (generated manifest)
-scripts/ui/         HUD + multi-touch pads, FightHUD (meter, hit counter, target bar), results card, dialogue, diagnostics, menus (title, level select, arena hub, shop, story, credits)
+scripts/ui/         HUD + multi-touch pads, FightHUD, VersusHUD, KeyBindPanel (rebinding), results card, dialogue, diagnostics, menus (title, level select, arena hub, shop, story, credits)
 tools/art/          vol_renderer/vol_chars/vol_build: pre-rendered 3D character pipeline; env/prop/portrait generators (python3 + Pillow + numpy)
 tools/audio/        Procedural music & SFX synthesizer (python3 + numpy)
 tools/capture/      Screenshot capture and README GIF recording via Godot's movie writer

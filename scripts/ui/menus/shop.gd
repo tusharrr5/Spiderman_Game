@@ -1,15 +1,16 @@
 extends Control
-## Upgrades & Suits: spend tokens earned in chapters and the arena on permanent stat upgrades and colourways.
+## Shop: spend tokens on permanent story upgrades, suit colourways and versus boosts (consumables).
 
 var _tokens: Label
 var _list: VBoxContainer
 var _preview: SpriteAnimator
+var _boosts: VBoxContainer
 
 
 func _ready() -> void:
 	UIKit.full_rect(self)
 	UIKit.backdrop(self, "res://assets/ui/title_bg.jpg", 0.6)
-	var title := UIKit.label("UPGRADES & SUITS", 26, Color(0.96, 0.25, 0.3), 8)
+	var title := UIKit.label("SHOP", 26, Color(0.96, 0.25, 0.3), 8)
 	title.position = Vector2(24, 12)
 	add_child(title)
 	_tokens = UIKit.label("", 12, Color(1, 0.85, 0.35), 4)
@@ -23,20 +24,24 @@ func _ready() -> void:
 
 	var stage := ColorRect.new()
 	stage.color = Color(0.04, 0.05, 0.1, 0.75)
-	stage.position = Vector2(470, 70)
-	stage.size = Vector2(150, 200)
+	stage.position = Vector2(470, 56)
+	stage.size = Vector2(150, 118)
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(stage)
 	var anim := SpriteAnimator.new()
 	_preview = anim
 	add_child(anim)
 	anim.setup("hero_classic", 0.0)
-	anim.scale *= 2.6
-	anim.position = Vector2(545, 165)
+	anim.scale *= 2.0
+	anim.position = Vector2(545, 128)
+	_boosts = VBoxContainer.new()
+	_boosts.position = Vector2(470, 180)
+	_boosts.add_theme_constant_override("separation", 3)
+	add_child(_boosts)
 
 	var back := UIKit.button("BACK", 11, Vector2(110, 28))
 	back.position = Vector2(24, 318)
-	back.pressed.connect(GameState.goto_arena_hub)
+	back.pressed.connect(_back)
 	add_child(back)
 	GameState.progress_changed.connect(_rebuild)
 	_rebuild()
@@ -97,6 +102,27 @@ func _rebuild() -> void:
 		b.name = "Suit_" + key
 		row.add_child(b)
 		_list.add_child(row)
+	for c in _boosts.get_children():
+		c.queue_free()
+	_boosts.add_child(UIKit.label("VERSUS BOOSTS", 12, Color(1, 0.9, 0.6), 3))
+	for key in GameState.BOOSTS:
+		var info: Array = GameState.BOOSTS[key]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		var l := UIKit.label("%s x%d" % [String(info[0]).replace(" BOOST", ""), int(GameState.boosts.get(key, 0))], 8, info[3], 3)
+		l.custom_minimum_size = Vector2(80, 18)
+		l.tooltip_text = String(info[1])
+		l.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(l)
+		var b := UIKit.button("BUY %d" % int(info[2]), 8, Vector2(66, 18))
+		b.name = "BuyBoost_" + key
+		b.tooltip_text = String(info[1])
+		b.disabled = GameState.tokens < int(info[2])
+		b.pressed.connect(func() -> void:
+			GameState.buy_boost(key)
+			_rebuild())
+		row.add_child(b)
+		_boosts.add_child(row)
 	_show_suit(GameState.suit_equipped)
 
 
@@ -117,4 +143,11 @@ func _show_suit(key: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_game"):
+		_back()
+
+
+func _back() -> void:
+	if GameState.shop_return == "title" or not GameState.is_arena_unlocked():
+		GameState.goto_title()
+	else:
 		GameState.goto_arena_hub()

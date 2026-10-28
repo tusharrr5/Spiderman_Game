@@ -12,8 +12,8 @@ const ARENA_W: float = 900.0
 const BOUT_TIME: float = 99.0
 const TAG_COOLDOWN: float = 10.0
 ## Versus pacing: more health and less damage than story mode so bouts last like a fighting game
-const HP_SCALE: float = 1.6
-const DMG_SCALE: float = 0.5
+const HP_SCALE: float = 1.8
+const DMG_SCALE: float = 0.45
 const STAGES: Array[String] = ["street_dusk", "rooftop_sunset", "night_industrial", "goblin_facility", "storm_finale"]
 const STAGE_NAMES: Dictionary = {"street_dusk": "DUSK ROOFTOPS", "rooftop_sunset": "SUNSET SKYLINE",
 	"night_industrial": "CHEMICAL YARD", "goblin_facility": "GOBLIN LAB", "storm_finale": "STORM TOWER"}
@@ -45,6 +45,12 @@ var last_result: Dictionary = {}
 var _bot_tagged: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _match_time: float = 0.0
+## Per team: active boost keys and synergy names ([[name, description]])
+var team_boosts: Array = [[], [], []]
+var team_synergies: Array = [[], [], []]
+## Bot fighter level by difficulty (player fighters use their own earned level)
+const BOT_LEVEL: Dictionary = {"easy": 1, "moderate": 2, "difficult": 3, "more_difficult": 5}
+var _bout_start_hp: int = -1
 
 
 func _ready() -> void:
@@ -82,6 +88,8 @@ func _ready() -> void:
 	hud.layer = 10
 	add_child(hud)
 	hud.enable_campaign_mode()
+	hud.show_restart_level = false
+	hud.retry_button.text = "REMATCH"
 	hud.get_node("RootControl/TopLeftHUD").visible = false
 	# TAG / PAUSE move to the bottom centre, between the two touch clusters
 	var bar := hud.get_node("RootControl/TopRightBar") as Control
@@ -99,12 +107,29 @@ func _ready() -> void:
 	if cpu_vs_cpu:
 		hud.set_touch_visible(false)
 
+	# pre-fight boosts (player side: chosen on the setup screen and used up now; a More Difficult bot gets one)
+	if not cpu_vs_cpu:
+		for bk in config.get("boosts", []):
+			if team_boosts[1].size() < GameState.MAX_BOOSTS_PER_FIGHT and GameState.use_boost(String(bk)):
+				team_boosts[1].append(String(bk))
+		GameState.save_game()
+	if difficulty == "more_difficult":
+		# the bot's boost makes it tougher, not harder-hitting, so its damage stays predictable per level
+		team_boosts[2].append("defense" if _rng.randf() < 0.5 else "health")
 	for t in [1, 2]:
+		team_synergies[t] = SpiderRoster.team_synergies(teams[t]) if teams[t].size() > 1 else []
 		slots[t] = []
+		var start_meter := PlayerController.METER_START
+		if "power" in team_boosts[t]:
+			start_meter += 100.0
+		if _has_synergy(t, "INTO THE SPIDER-VERSE"):
+			start_meter += 100.0
 		for k in teams[t]:
-			slots[t].append({"hp": -1, "meter": PlayerController.METER_START, "alive": true})
+			slots[t].append({"hp": -1, "meter": start_meter, "alive": true})
 		vhud.set_team(t - 1, teams[t], _alive_list(t))
-	player_stats = {"hits": 0, "max_combo": 0, "parries": 0, "blocks": 0, "damage_taken": 0, "damage_dealt": 0, "specials": 0}
+		vhud.set_boosts(t - 1, team_boosts[t], team_synergies[t])
+	player_stats = {"hits": 0, "max_combo": 0, "parries": 0, "blocks": 0, "damage_taken": 0, "damage_dealt": 0, "specials": 0,
+		"five_hit": 0, "debuffs": 0, "crits": 0, "sp3": 0, "perfects": 0}
 	Audio.play_music("boss_theme")
 	_start_bout(true)
 
@@ -142,7 +167,30 @@ func _spawn(t: int, slot: int, x: float) -> PlayerController:
 	world.add_child(f)
 	f.setup_fighter(key, info, t)
 	f.damage_mult *= DMG_SCALE
-	f.health_component.max_health = int(round(float(info["hp"]) * HP_SCALE))
+	var lvl: int = GameState.fighter_level(key) if (t == 1 and not cpu_vs_cpu) else int(BOT_LEVEL.get(difficulty, 1))
+	var lvl_bonus := 0.02 * (lvl - 1)
+	var hp_mult := HP_SCALE * (1.0 + lvl_bonus)
+	f.damage_mult *= 1.0 + lvl_bonus
+	var boosts: Array = team_boosts[t]
+	if "attack" in boosts:
+		f.boost_attack *= 1.2
+	if "defense" in boosts:
+		f.boost_defense *= 0.8
+	if "crit" in boosts:
+		f.boost_crit += 0.15
+	if "power" in boosts:
+		f.meter_gain_mult *= 1.25
+	if "health" in boosts:
+		hp_mult *= 1.2
+	if _has_synergy(t, "THE PETER PARKERS"):
+		hp_mult *= 1.1
+	if _has_synergy(t, "SPIDER-GANG"):
+		f.meter_gain_mult *= 1.2
+	if _has_synergy(t, "SPIDER-SOCIETY"):
+		f.boost_attack *= 1.1
+	if _has_synergy(t, "%s BOND" % SpiderRoster.class_of(key)):
+		f.boost_defense *= 0.92
+	f.health_component.max_health = int(round(float(info["hp"]) * hp_mult))
 	f.health_component.reset_health()
 	f.health_component.invulnerability_duration = 0.35 if f.passive == "evasion" else 0.15
 	if t == 2:
@@ -156,8 +204,24 @@ func _spawn(t: int, slot: int, x: float) -> PlayerController:
 	f.player_died.connect(_on_ko.bind(t, f))
 	active[t] = f
 	current[t] = slot
-	vhud.bind_fighter(t - 1, f)
+	vhud.bind_fighter(t - 1, f, lvl)
+	_update_class_badges()
 	return f
+
+
+func _has_synergy(t: int, syn_name: String) -> bool:
+	for s in team_synergies[t]:
+		if String(s[0]) == syn_name:
+			return true
+	return false
+
+
+func _update_class_badges() -> void:
+	for t in [1, 2]:
+		var f: PlayerController = active[t]
+		var o: PlayerController = active[3 - t]
+		if is_instance_valid(f) and is_instance_valid(o):
+			vhud.set_class(t - 1, f.character_key, SpiderRoster.advantage(f.character_key, o.character_key))
 
 
 func _save_slot(t: int) -> void:
@@ -199,11 +263,17 @@ func _start_bout(first: bool) -> void:
 				x = clampf(other.global_position.x + (-140.0 if t == 1 else 140.0), 60.0, ARENA_W - 60.0)
 			_spawn(t, slot, x)
 	for t in [1, 2]:
-		(active[t] as PlayerController).input_locked = true
-		(active[t] as PlayerController).health_component.grant_invulnerability(1.4)
+		var af := active[t] as PlayerController
+		af.input_locked = true
+		af.health_component.grant_invulnerability(1.4)
+		af.play_forced("intro", 1.3)
+	_bout_start_hp = (active[1] as PlayerController).health_component.current_health
 	var n1 := String(SpiderRoster.info(String(teams[1][current[1]]))["name"])
 	var n2 := String(SpiderRoster.info(String(teams[2][current[2]]))["name"])
-	vhud.show_banner("ROUND %d" % bout, "%s  VS  %s" % [n1, n2], 0.9)
+	var sub := "%s  VS  %s" % [n1, n2]
+	if first and not team_synergies[1].is_empty():
+		sub += "\nSYNERGY: " + ", ".join(team_synergies[1].map(func(s: Array) -> String: return String(s[0])))
+	vhud.show_banner("ROUND %d" % bout, sub, 0.9)
 	Audio.play_sfx("boss_warn", 0.6)
 	await get_tree().create_timer(1.3 if first else 1.0).timeout
 	if finished or not is_inside_tree():
@@ -225,12 +295,18 @@ func _on_ko(t: int, f: PlayerController) -> void:
 	slots[t][current[t]]["hp"] = 0
 	vhud.set_team(t - 1, teams[t], _alive_list(t))
 	var winner_f: PlayerController = active[3 - t]
+	var perfect := false
 	if is_instance_valid(winner_f):
 		winner_f.input_locked = true
 		winner_f.health_component.grant_invulnerability(3.0)
+		winner_f.effects.clear()
+		winner_f.play_forced("victory", 1.8)
+		perfect = t == 2 and not cpu_vs_cpu and winner_f.health_component.current_health >= _bout_start_hp
+	if perfect:
+		player_stats["perfects"] = int(player_stats["perfects"]) + 1
 	Fx.hitstop(0.45, 0.25)
 	Fx.flash(Color(1, 1, 1, 0.5), 0.3)
-	vhud.show_banner("K.O.!", String(SpiderRoster.info(f.character_key)["name"]) + " is down", 1.0)
+	vhud.show_banner("PERFECT!" if perfect else "K.O.!", String(SpiderRoster.info(f.character_key)["name"]) + " is down", 1.0)
 	Audio.play_sfx("explosion", 0.8)
 	await get_tree().create_timer(1.8).timeout
 	if not is_inside_tree():
@@ -267,6 +343,8 @@ func tag(t: int) -> bool:
 	nf._set_facing(facing)
 	nf.health_component.grant_invulnerability(0.6)
 	nf._start_melee_attack(4)
+	if t == 1:
+		_bout_start_hp = -1    # a tag ends the chance of a perfect round
 	tag_cd[t] = TAG_COOLDOWN
 	Fx.burst(world, pos, nf.fx_color, 20, 160.0, 0.0, 0.4)
 	Audio.play_sfx("whoosh", 0.9)
@@ -276,6 +354,7 @@ func tag(t: int) -> bool:
 
 func _physics_process(delta: float) -> void:
 	_update_camera(delta)
+	FightEffects.halted = paused_flow or finished
 	if finished:
 		return
 	for t in [1, 2]:
@@ -355,7 +434,7 @@ func _finish(winning_team: int) -> void:
 	var w: PlayerController = active[winning_team]
 	if is_instance_valid(w):
 		w.input_locked = true
-		w.sprite.play("victory", true)
+		w.play_forced("victory", 60.0)
 	var r := Scoring.evaluate(player_stats, _match_time, 60.0 * teams[1].size(), 800 * teams[1].size())
 	var mult := 1.6 if teams[1].size() > 1 else 1.0
 	if cpu_vs_cpu:
@@ -366,7 +445,7 @@ func _finish(winning_team: int) -> void:
 		r["tokens"] = 25
 	last_result = r
 	if not cpu_vs_cpu:
-		GameState.record_versus(won, difficulty, teams[1], teams[1].size() > 1)
+		GameState.record_versus(won, difficulty, teams[1], teams[1].size() > 1, player_stats)
 		GameState.add_tokens(int(r["tokens"]))
 	Audio.play_music("victory_jingle" if won or cpu_vs_cpu else "defeat_jingle", 0.2, false)
 	var team_name := "PLAYER" if not cpu_vs_cpu else "BLUE TEAM"
@@ -378,6 +457,13 @@ func _finish(winning_team: int) -> void:
 	var panel := ResultsPanel.new()
 	hud.get_node("RootControl").add_child(panel)
 	panel.show_result("VICTORY" if won else "DEFEAT", r, false)
+	if not cpu_vs_cpu:
+		var rw := UIKit.label(_rewards_text(), 8, Color(0.75, 1.0, 0.8), 3)
+		rw.name = "Rewards"
+		rw.position = Vector2(120, 250)
+		rw.size = Vector2(400, 34)
+		rw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hud.get_node("RootControl").add_child(rw)
 	var row := HBoxContainer.new()
 	row.position = Vector2(170, 286)
 	row.add_theme_constant_override("separation", 8)
@@ -395,12 +481,29 @@ func _finish(winning_team: int) -> void:
 	again.grab_focus()
 
 
+func _rewards_text() -> String:
+	var rw: Dictionary = GameState.last_versus_rewards
+	var parts: Array = ["+%d XP" % int(rw.get("xp", 0))]
+	for lv in rw.get("levels", []):
+		parts.append("%s reached LV %d!" % [String(SpiderRoster.info(String(lv[0]))["name"]), int(lv[1])])
+	if String(rw.get("boost", "")) != "":
+		parts.append("Boost found: " + String(GameState.BOOSTS[String(rw["boost"])][0]))
+	var text := "   |   ".join(parts)
+	for c in rw.get("challenges", []):
+		text += "\nCHALLENGE COMPLETE: %s  +%d tokens" % [String(c[0]), int(c[1])]
+	return text
+
+
 func _alive_count(t: int) -> int:
 	var n := 0
 	for s in slots[t]:
 		if bool(s["alive"]):
 			n += 1
 	return n
+
+
+func _exit_tree() -> void:
+	FightEffects.halted = false
 
 
 func rematch() -> void:

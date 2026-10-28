@@ -120,6 +120,9 @@ def render_frame(args):
         img = R.to_image(acc / len(samples))
     else:
         img = R.to_image(one(pose))
+    if pose.flip_v:
+        # ceiling crawl is posed on all fours and flipped so the hands and feet grip the ceiling
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
     return img.tobytes(), img.size
 
 

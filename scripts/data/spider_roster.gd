@@ -69,3 +69,84 @@ static func random_team(rng: RandomNumberGenerator, size: int, exclude: Array = 
 	while out.size() < size and not pool.is_empty():
 		out.append(pool.pop_at(rng.randi_range(0, pool.size() - 1)))
 	return out
+
+
+# ------------------------------------------------------------------ classes, signature abilities, synergies
+## Class triangle (each class beats the next one): attacker with the advantage deals +12%, against it -10%.
+const CLASS_ORDER: Array[String] = ["SCIENCE", "MYSTIC", "COSMIC", "TECH", "SKILL"]
+const CLASS_COLORS: Dictionary = {"SCIENCE": Color(0.4, 0.95, 0.6), "MYSTIC": Color(0.85, 0.45, 1.0), "COSMIC": Color(0.4, 0.85, 1.0),
+	"TECH": Color(0.45, 0.6, 1.0), "SKILL": Color(1.0, 0.45, 0.4)}
+const CLASSES: Dictionary = {
+	"miles": "SCIENCE", "gwen": "SCIENCE", "peter_b": "SCIENCE", "classic": "SCIENCE", "scarlet": "SCIENCE",
+	"india": "MYSTIC", "uk": "MYSTIC", "ham": "MYSTIC", "1967": "MYSTIC",
+	"symbiote": "COSMIC", "jess": "COSMIC", "punk": "COSMIC",
+	"peni": "TECH", "2099": "TECH", "byte": "TECH", "iron": "TECH", "cyborg": "TECH", "advanced": "TECH",
+	"noir": "SKILL", "bagman": "SKILL",
+}
+## key -> [signature debuff (heavy / SP2 inflicts it), signature buff (gained when casting SP1)]
+const SIG: Dictionary = {
+	"miles": ["shock", "precision"], "gwen": ["bleed", "precision"], "peter_b": ["weakness", "armor_up"],
+	"noir": ["bleed", "fury"], "peni": ["shock", "armor_up"], "ham": ["weakness", "regen"],
+	"2099": ["bleed", "fury"], "punk": ["armor_break", "power_gain"], "india": ["armor_break", "regen"],
+	"jess": ["poison", "power_gain"], "scarlet": ["poison", "fury"], "uk": ["armor_break", "armor_up"],
+	"byte": ["shock", "power_gain"], "classic": ["weakness", "precision"], "symbiote": ["poison", "fury"],
+	"iron": ["shock", "armor_up"], "bagman": ["weakness", "regen"], "1967": ["armor_break", "regen"],
+	"advanced": ["bleed", "precision"], "cyborg": ["armor_break", "fury"],
+}
+## [name, description, members, how many of them must be on the team]
+const SYNERGIES: Array = [
+	["INTO THE SPIDER-VERSE", "+1 power bar at the start", ["miles", "gwen", "peter_b"], 2],
+	["THE PETER PARKERS", "+10% health", ["classic", "symbiote", "peter_b", "advanced", "1967"], 2],
+	["SPIDER-GANG", "+20% power gain", ["noir", "ham", "peni", "punk", "india"], 2],
+	["SPIDER-SOCIETY", "+10% attack", ["2099", "jess", "byte", "scarlet", "cyborg", "iron", "uk", "bagman"], 2],
+]
+
+
+static func class_of(key: String) -> String:
+	return String(CLASSES.get(key, "SCIENCE"))
+
+
+## +1 when `att` has the class advantage over `def`, -1 when it is at a disadvantage, else 0.
+static func advantage(att: String, def: String) -> int:
+	var a := CLASS_ORDER.find(class_of(att))
+	var d := CLASS_ORDER.find(class_of(def))
+	if a < 0 or d < 0 or a == d:
+		return 0
+	if (a + 1) % CLASS_ORDER.size() == d:
+		return 1
+	if (d + 1) % CLASS_ORDER.size() == a:
+		return -1
+	return 0
+
+
+static func class_mult(att: String, def: String) -> float:
+	match advantage(att, def):
+		1:
+			return 1.12
+		-1:
+			return 0.9
+	return 1.0
+
+
+static func sig_text(key: String) -> String:
+	var s: Array = SIG.get(key, ["bleed", "fury"])
+	return "Heavy & SP2 inflict %s  |  SP1 grants %s" % [FightEffects.DEFS[s[0]]["name"], FightEffects.DEFS[s[1]]["name"]]
+
+
+## Synergies active for a team (3v3): [[name, description], ...]
+static func team_synergies(team: Array) -> Array:
+	var out: Array = []
+	for s in SYNERGIES:
+		var n := 0
+		for k in team:
+			if k in s[2]:
+				n += 1
+		if n >= int(s[3]):
+			out.append([s[0], s[1]])
+	var counts: Dictionary = {}
+	for k in team:
+		counts[class_of(k)] = int(counts.get(class_of(k), 0)) + 1
+	for c in counts:
+		if int(counts[c]) >= 2:
+			out.append(["%s BOND" % c, "+8% defense"])
+	return out

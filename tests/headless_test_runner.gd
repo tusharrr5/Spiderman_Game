@@ -18,6 +18,10 @@ func _init() -> void:
 		quit(1)
 	)
 	await process_frame
+	# tests always play with the default keys, never the player's own bindings (user://keybinds.cfg)
+	var kb: GDScript = load("res://scripts/core/key_bindings.gd")
+	kb.set("save_path", "user://test_keybinds.cfg")
+	kb.call("reset_defaults")
 	var only := OS.get_environment("TEST_SUITE")
 	for path in SUITES:
 		if only != "" and not path.contains(only):

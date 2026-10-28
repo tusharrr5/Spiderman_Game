@@ -1,7 +1,8 @@
 class_name VersusHUD
 extends Control
-## Fighting-game HUD for versus matches: mirrored portrait + name + health (with damage trail) + power
-## meter for each side, team roster pips (KO'd fighters greyed), round timer, hit counters and banners.
+## Fighting-game HUD for versus matches: mirrored portrait + name + level + class badge (with the class
+## advantage arrow) + health (with damage trail) + power meter for each side, buff/debuff icons with
+## timers, active boosts, team roster pips (KO'd fighters greyed), round timer, hit counters and banners.
 
 const BAR_W: float = 200.0
 
@@ -123,7 +124,47 @@ func _build_side(i: int) -> Dictionary:
 	hits.modulate.a = 0.0
 	root.add_child(hits)
 	d["hits"] = hits
+	var cls := _label(7, Color(1, 1, 1))
+	cls.position = Vector2(bx, 2)
+	cls.size = Vector2(BAR_W, 10)
+	cls.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if right else HORIZONTAL_ALIGNMENT_RIGHT
+	root.add_child(cls)
+	d["class"] = cls
+	var fx_row := HBoxContainer.new()
+	fx_row.add_theme_constant_override("separation", 2)
+	fx_row.position = Vector2(bx, 47)
+	fx_row.size = Vector2(BAR_W, 10)
+	fx_row.alignment = BoxContainer.ALIGNMENT_END if right else BoxContainer.ALIGNMENT_BEGIN
+	fx_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(fx_row)
+	d["fx_row"] = fx_row
+	d["fx_chips"] = {}
+	var bl := _label(6, Color(0.85, 0.9, 1.0))
+	bl.position = Vector2(bx, 59)
+	bl.size = Vector2(BAR_W, 9)
+	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if right else HORIZONTAL_ALIGNMENT_LEFT
+	root.add_child(bl)
+	d["boost_label"] = bl
 	return d
+
+
+## Class badge; adv = +1 (advantage, green arrow up) / -1 (disadvantage, red arrow down) / 0.
+func set_class(side: int, key: String, adv: int) -> void:
+	var l: Label = _sides[side]["class"]
+	var c := SpiderRoster.class_of(key)
+	var arrow := " \u25B2" if adv > 0 else (" \u25BC" if adv < 0 else "")
+	l.text = (arrow + "  " + c) if bool(_sides[side]["right"]) else (c + arrow)
+	l.add_theme_color_override("font_color", SpiderRoster.CLASS_COLORS.get(c, Color.WHITE) if adv == 0 else (Color(0.4, 1.0, 0.45) if adv > 0 else Color(1.0, 0.4, 0.35)))
+
+
+## Active boosts and synergies for a side, as one compact line.
+func set_boosts(side: int, boost_keys: Array, synergies: Array) -> void:
+	var parts: Array = []
+	for b in boost_keys:
+		parts.append(String(GameState.BOOSTS[String(b)][0]).replace(" BOOST", "+"))
+	for s in synergies:
+		parts.append(String(s[0]))
+	(_sides[side]["boost_label"] as Label).text = "  ".join(parts)
 
 
 ## team_keys: roster keys; alive: Array[bool]
@@ -138,11 +179,14 @@ func set_team(side: int, team_keys: Array, alive: Array) -> void:
 			pr.modulate = Color(1, 1, 1) if bool(alive[s]) else Color(0.25, 0.2, 0.2, 0.8)
 
 
-func bind_fighter(side: int, f: PlayerController) -> void:
+func bind_fighter(side: int, f: PlayerController, level: int = 1) -> void:
 	var d: Dictionary = _sides[side]
 	var info := SpiderRoster.info(f.character_key)
 	(d["portrait"] as TextureRect).texture = load(String(info["portrait"]))
-	(d["name"] as Label).text = String(info["name"])
+	(d["name"] as Label).text = ("LV%d  %s" if bool(d["right"]) else "%s  LV%d") % ([level, String(info["name"])] if bool(d["right"]) else [String(info["name"]), level])
+	for c in (d["fx_row"] as HBoxContainer).get_children():
+		c.queue_free()
+	d["fx_chips"] = {}
 	d["fighter"] = f
 	f.health_component.health_changed.connect(func(c: int, m: int) -> void: _set_hp(side, c, m))
 	f.meter_changed.connect(func(v: float, _m: float) -> void: _set_meter(side, v))
@@ -201,8 +245,50 @@ func show_banner(title: String, sub: String = "", hold: float = 1.3) -> void:
 	tw.parallel().tween_property(banner_sub, "modulate:a", 0.0, 0.3)
 
 
+func _update_effects(d: Dictionary) -> void:
+	var fo: Variant = d.get("fighter")
+	if not is_instance_valid(fo) or (fo as PlayerController).effects == null:
+		return
+	var fx := (fo as PlayerController).effects
+	var chips: Dictionary = d["fx_chips"]
+	for k in chips.keys():
+		if not fx.active.has(k):
+			(chips[k] as Control).queue_free()
+			chips.erase(k)
+	for k in fx.active:
+		var e: Dictionary = fx.active[k]
+		var chip: Control = chips.get(k)
+		if chip == null:
+			var def: Dictionary = FightEffects.DEFS[k]
+			chip = ColorRect.new()
+			(chip as ColorRect).color = Color(0.03, 0.03, 0.08, 0.85)
+			chip.custom_minimum_size = Vector2(26, 10)
+			chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var bar := ColorRect.new()
+			bar.name = "Bar"
+			bar.color = def["color"]
+			bar.position = Vector2(0, 8)
+			bar.size = Vector2(26, 2)
+			bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			chip.add_child(bar)
+			var t := _label(6, def["color"])
+			t.name = "Tag"
+			t.add_theme_constant_override("outline_size", 2)
+			t.position = Vector2(0, -2)
+			t.size = Vector2(26, 9)
+			t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			chip.add_child(t)
+			(d["fx_row"] as HBoxContainer).add_child(chip)
+			chips[k] = chip
+		var tag := String(FightEffects.DEFS[k]["tag"])
+		(chip.get_node("Tag") as Label).text = tag + ("%d" % int(e["stacks"]) if int(e["stacks"]) > 1 else "")
+		(chip.get_node("Bar") as ColorRect).size.x = 26.0 * clampf(float(e["t"]) / maxf(0.01, float(e["dur"])), 0.0, 1.0)
+
+
 func _process(delta: float) -> void:
 	for d in _sides:
+		if d.has("fx_row"):
+			_update_effects(d)
 		if d.has("trail"):
 			var tr: ColorRect = d["trail"]
 			var target := (BAR_W - 2) * float(d.get("hp_ratio", 1.0))

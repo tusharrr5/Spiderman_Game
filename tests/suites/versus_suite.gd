@@ -1,7 +1,8 @@
 extends RefCounted
 ## Versus-mode regression suite: the 20-fighter roster and its art, the bot AI at every difficulty (it
 ## fights, blocks, parries and scales), 1v1 and 3v3 elimination, tagging, the round timer, focus charge,
-## blast specials, CPU vs CPU, records/tokens, and the title / setup / fighter-select menus.
+## blast specials, CPU vs CPU, records/tokens, the title / setup / fighter-select menus, key rebinding,
+## and the fight systems: 5-hit chain, buffs/debuffs, class triangle, boosts, synergies, levels, challenges.
 
 var tree: SceneTree
 
@@ -16,7 +17,8 @@ func run(p_tree: SceneTree) -> bool:
 	print("=== VERSUS SUITE ===")
 	for t in [_test_roster, _test_every_fighter_spawns, _test_1v1_bot_fights_and_win, _test_difficulty_scaling,
 			_test_bot_defends, _test_3v3_elimination_and_tag, _test_timer, _test_charge_and_blast, _test_cpu_vs_cpu,
-			_test_menus]:
+			_test_menus, _test_key_rebinding, _test_five_hit_chain_and_effects, _test_class_boosts_synergy,
+			_test_progression]:
 		if not await t.call():
 			return false
 	GameState.reset_progress()
@@ -340,4 +342,159 @@ func _test_menus() -> bool:
 	await _frames(3)
 	if ok:
 		print("[PASS] menus: title Story/Versus split, setup (mode, difficulty), fighter select, bot draft")
+	return ok
+
+
+func _test_key_rebinding() -> bool:
+	var prev_path := KeyBindings.save_path
+	KeyBindings.save_path = "user://test_keybinds.cfg"
+	KeyBindings.reset_defaults()
+	var ok := _check(KeyBindings.get_key("web_action", 0) == KEY_K, "web shot defaults to K")
+	# Q for web shot: the action fires on Q and no longer on K
+	KeyBindings.set_key("web_action", 0, KEY_Q)
+	var q := InputEventKey.new()
+	q.keycode = KEY_Q
+	q.physical_keycode = KEY_Q
+	q.pressed = true
+	var k := InputEventKey.new()
+	k.keycode = KEY_K
+	k.physical_keycode = KEY_K
+	k.pressed = true
+	ok = ok and _check(InputMap.event_is_action(q, "web_action") and not InputMap.event_is_action(k, "web_action"), "web shot is now on Q, not K")
+	# taking a key another action uses swaps them, so no key is bound twice
+	var moved := KeyBindings.set_key("attack_punch", 0, KEY_Q)
+	ok = ok and _check(moved == "Web shot / Swing" and KeyBindings.get_key("web_action", 0) == KEY_J, "binding Q to punch swaps J onto web shot (%s)" % moved)
+	ok = ok and _check(KeyBindings.fill("press {punch} then {web}") == "press Q then J", "hint text shows the new keys (%s)" % KeyBindings.fill("press {punch} then {web}"))
+	# saved and restored
+	KeyBindings.load_and_apply()
+	ok = ok and _check(KeyBindings.get_key("attack_punch", 0) == KEY_Q, "bindings persist across a reload")
+	# a real Q key press now punches in game
+	var v := await _match({"mode": "1v1", "difficulty": "easy", "stage": "street_dusk", "team1": ["classic"], "team2": ["noir"]})
+	(v.active[2] as PlayerController).input_locked = true
+	var human: PlayerController = v.active[1]
+	await _wait(func() -> bool: return human.current_state == PlayerController.State.IDLE, 120)
+	_key(KEY_Q, true)
+	await _frames(2)
+	_key(KEY_Q, false)
+	await _frames(2)
+	ok = ok and _check(human.current_state == PlayerController.State.ATTACKING, "the rebound Q key punches (state %s)" % PlayerController.State.keys()[human.current_state])
+	await _unload(v)
+	# the settings screen
+	var panel := KeyBindPanel.new()
+	tree.root.add_child(panel)
+	panel.open()
+	await _frames(2)
+	ok = ok and _check(panel.visible and (panel.find_child("Key_attack_punch_0", true, false) as Button).text == "Q", "settings screen lists the current keys")
+	(panel.find_child("Key_jump_1", true, false) as Button).emit_signal("pressed")
+	_key(KEY_X, true)
+	_key(KEY_X, false)
+	await _frames(2)
+	ok = ok and _check(KeyBindings.get_key("jump", 1) == KEY_X and (panel.find_child("Key_jump_1", true, false) as Button).text == "X", "clicking a slot and pressing X rebinds it")
+	(panel.find_child("ResetKeys", true, false) as Button).emit_signal("pressed")
+	await _frames(2)
+	ok = ok and _check(KeyBindings.is_default() and KeyBindings.get_key("attack_punch", 0) == KEY_J, "RESET DEFAULTS restores J / K")
+	panel.queue_free()
+	# back to default keys; never load the player's real user://keybinds.cfg inside the test run
+	KeyBindings.reset_defaults()
+	KeyBindings.save_path = prev_path
+	if ok:
+		print("[PASS] key rebinding: Q for web/punch, swap on conflict, saved, real key press, settings screen, reset")
+	return ok
+
+
+func _test_five_hit_chain_and_effects() -> bool:
+	var v := await _match({"mode": "1v1", "difficulty": "easy", "stage": "street_dusk", "team1": ["gwen"], "team2": ["peter_b"]})
+	var human: PlayerController = v.active[1]
+	var bot: PlayerController = v.active[2]
+	bot.input_locked = true
+	bot.health_component.max_health = 5000
+	bot.health_component.reset_health()
+	var ok := _check(human.long_combo and human.effects != null, "versus fighters use the 5-hit chain and status effects")
+	await _wait(func() -> bool: return not human.input_locked and human.current_state == PlayerController.State.IDLE, 200)
+	var seen: Array = []
+	for i in range(5):
+		human.global_position = bot.global_position - Vector2(22, 0)
+		human._set_facing(1.0)
+		bot.health_component.is_invulnerable = false
+		_key(KEY_J, true)
+		await _frames(1)
+		_key(KEY_J, false)
+		await _frames(10)
+		seen.append(human._pending_attack_id)
+	ok = ok and _check(seen == ["jab_1", "cross_2", "hook_3", "roundhouse_4", "spider_finisher"], "J x5 runs jab, cross, hook, roundhouse, finisher (%s)" % [seen])
+	await _frames(20)
+	ok = ok and _check(human.effects.has("fury") and int(human.stats.get("five_hit", 0)) == 1, "landing the 5th hit grants FURY (%s)" % [human.effects.active.keys()])
+	ok = ok and _check(human.out_mult() > 1.1, "fury raises outgoing damage (x%.2f)" % human.out_mult())
+	# heavy inflicts Gwen's signature debuff (BLEED), which ticks damage over time
+	await _wait(func() -> bool: return human.current_state == PlayerController.State.IDLE, 120)
+	human.global_position = bot.global_position - Vector2(22, 0)
+	bot.health_component.is_invulnerable = false
+	_key(KEY_J, true)
+	await _frames(26)
+	_key(KEY_J, false)
+	await _frames(30)
+	var sig := String(SpiderRoster.SIG["gwen"][0])
+	ok = ok and _check(bot.effects.has(sig), "a heavy inflicts the signature debuff %s (%s)" % [sig, bot.effects.active.keys()])
+	var hp := bot.health_component.current_health
+	await _frames(90)
+	ok = ok and _check(bot.health_component.current_health < hp, "BLEED drains health over time (%d -> %d)" % [hp, bot.health_component.current_health])
+	ok = ok and _check(v.vhud._sides[1]["fx_chips"].has(sig), "the HUD shows the debuff icon")
+	# SP1 grants the signature buff
+	human.set_meter(100.0)
+	await _wait(func() -> bool: return human.current_state == PlayerController.State.IDLE, 120)
+	_key(KEY_L, true)
+	await _frames(2)
+	_key(KEY_L, false)
+	await _frames(10)
+	ok = ok and _check(human.effects.has(String(SpiderRoster.SIG["gwen"][1])), "SP1 grants the signature buff")
+	await _unload(v)
+	if ok:
+		print("[PASS] 5-hit chain -> FURY, heavy -> signature debuff with damage over time, SP1 -> buff, HUD icons")
+	return ok
+
+
+func _test_class_boosts_synergy() -> bool:
+	var ok := _check(SpiderRoster.advantage("miles", "india") == 1 and SpiderRoster.advantage("india", "miles") == -1, "SCIENCE beats MYSTIC")
+	ok = ok and _check(SpiderRoster.class_mult("noir", "miles") > 1.0 and SpiderRoster.class_mult("miles", "noir") < 1.0, "SKILL beats SCIENCE")
+	for k in SpiderRoster.ORDER:
+		ok = ok and _check(SpiderRoster.CLASSES.has(k) and SpiderRoster.SIG.has(k), "%s has a class and signature ability" % k)
+	ok = ok and _check(SpiderRoster.team_synergies(["miles", "gwen", "noir"]).any(func(s: Array) -> bool: return s[0] == "INTO THE SPIDER-VERSE"), "Miles + Gwen trigger INTO THE SPIDER-VERSE")
+	GameState.boosts = {"attack": 1, "health": 1}
+	var v := await _match({"mode": "3v3", "difficulty": "easy", "stage": "street_dusk", "team1": ["miles", "gwen", "noir"], "team2": ["india", "uk", "ham"],
+		"boosts": ["attack", "health", "crit"]})
+	var f: PlayerController = v.active[1]
+	ok = ok and _check(v.team_boosts[1] == ["attack", "health"] and int(GameState.boosts["attack"]) == 0, "owned boosts are used up, missing ones ignored (%s)" % [v.team_boosts[1]])
+	ok = ok and _check(is_equal_approx(f.boost_attack, 1.2) and f.health_component.max_health == int(round(100 * VersusLevel.HP_SCALE * 1.2)), "boosts raise attack and health")
+	ok = ok and _check(f.power_meter >= PlayerController.METER_START + 100.0, "INTO THE SPIDER-VERSE starts the team with an extra bar (%.0f)" % f.power_meter)
+	ok = ok and _check(f.incoming_mult(v.active[2]) < 1.0, "Miles (SCIENCE) takes less damage from a MYSTIC fighter")
+	ok = ok and _check(String((v.vhud._sides[0]["class"] as Label).text).contains("SCIENCE"), "HUD shows the class badge")
+	await _unload(v)
+	if ok:
+		print("[PASS] class triangle, signature abilities, boosts used up and applied, team synergies, class badge")
+	return ok
+
+
+func _test_progression() -> bool:
+	GameState.reset_progress()
+	var tokens0 := GameState.tokens
+	GameState.record_versus(true, "more_difficult", ["miles"], false, {"parries": 3, "five_hit": 2})
+	var rw := GameState.last_versus_rewards
+	var ok := _check(int(rw["xp"]) > 0 and int(GameState.fighter_xp["miles"]) == int(rw["xp"]), "a win gives the fighter XP (%s)" % rw)
+	ok = ok and _check("win1" in GameState.challenges_claimed and "hard1" in GameState.challenges_claimed and GameState.tokens > tokens0, "first win and MORE DIFFICULT challenges pay out")
+	ok = ok and _check(GameState.challenge_value("parries") == 3, "fight stats feed challenge counters")
+	for _i in range(10):
+		GameState.record_versus(true, "difficult", ["miles"], false)
+	ok = ok and _check(GameState.fighter_level("miles") > 1 and GameState.fighter_level_bonus("miles") > 0.0, "fighters level up (LV %d)" % GameState.fighter_level("miles"))
+	var r1 := GameState.claim_daily_login()
+	var r2 := GameState.claim_daily_login()
+	ok = ok and _check(int(r1.get("tokens", 0)) > 0 and r2.is_empty(), "the daily reward pays once per day")
+	GameState.tokens = 500
+	var crit0 := int(GameState.boosts.get("crit", 0))
+	ok = ok and _check(GameState.buy_boost("crit") and int(GameState.boosts["crit"]) == crit0 + 1 and GameState.tokens == 400, "boosts can be bought with tokens")
+	GameState.save_game()
+	GameState.load_game()
+	ok = ok and _check(int(GameState.boosts["crit"]) == crit0 + 1 and GameState.fighter_level("miles") > 1 and GameState.login_day == GameState.today_key(), "boosts, levels and login day are saved")
+	GameState.reset_progress()
+	if ok:
+		print("[PASS] progression: XP and levels, challenges, daily reward, boost shop, saved")
 	return ok

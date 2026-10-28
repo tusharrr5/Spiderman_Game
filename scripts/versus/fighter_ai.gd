@@ -6,10 +6,10 @@ extends RefCounted
 ## combo length, special usage and damage output.
 
 const LEVELS: Dictionary = {
-	"easy": {"rest": 1.4, "react": 0.5, "block": 0.12, "parry": 0.0, "aggr": 0.35, "combo": 1, "special": 0.2, "dodge": 0.05, "dmg": 0.7, "think": 0.4, "guard": 0.0},
-	"moderate": {"rest": 0.9, "react": 0.3, "block": 0.35, "parry": 0.12, "aggr": 0.55, "combo": 2, "special": 0.55, "dodge": 0.12, "dmg": 0.9, "think": 0.24, "guard": 0.1},
-	"difficult": {"rest": 0.55, "react": 0.18, "block": 0.6, "parry": 0.4, "aggr": 0.72, "combo": 3, "special": 0.85, "dodge": 0.22, "dmg": 1.05, "think": 0.14, "guard": 0.25},
-	"more_difficult": {"rest": 0.35, "react": 0.1, "block": 0.82, "parry": 0.68, "aggr": 0.88, "combo": 4, "special": 1.0, "dodge": 0.32, "dmg": 1.2, "think": 0.08, "guard": 0.4},
+	"easy": {"rest": 1.4, "react": 0.5, "block": 0.12, "parry": 0.0, "aggr": 0.35, "combo": 2, "special": 0.2, "dodge": 0.05, "dmg": 0.7, "think": 0.4, "guard": 0.0},
+	"moderate": {"rest": 0.9, "react": 0.3, "block": 0.35, "parry": 0.12, "aggr": 0.55, "combo": 3, "special": 0.55, "dodge": 0.12, "dmg": 0.9, "think": 0.24, "guard": 0.1},
+	"difficult": {"rest": 0.55, "react": 0.18, "block": 0.6, "parry": 0.4, "aggr": 0.72, "combo": 4, "special": 0.85, "dodge": 0.22, "dmg": 1.05, "think": 0.14, "guard": 0.25},
+	"more_difficult": {"rest": 0.35, "react": 0.1, "block": 0.82, "parry": 0.68, "aggr": 0.88, "combo": 5, "special": 1.0, "dodge": 0.32, "dmg": 1.1, "think": 0.08, "guard": 0.4},
 }
 const NAMES: Dictionary = {"easy": "EASY", "moderate": "MODERATE", "difficult": "DIFFICULT", "more_difficult": "MORE DIFFICULT"}
 const MELEE_RANGE: float = 30.0
@@ -210,7 +210,7 @@ func _run_combo(dist: float) -> void:
 		return
 	stats["attacks"] += 1
 	var roll := _rng.randf()
-	if int(p["combo"]) >= 3 and roll < 0.18:
+	if int(p["combo"]) >= 4 and roll < 0.18:
 		_hold("attack_punch", 0.35)          # heavy: punch held through the jab
 		_tap("attack_punch")
 		_press_t = 0.6

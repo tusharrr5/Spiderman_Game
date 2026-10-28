@@ -100,7 +100,7 @@ func _next() -> void:
 	var path := StoryData.portrait_path(speaker)
 	_portrait.texture = load(path) if path != "" and ResourceLoader.exists(path) else null
 	_portrait.visible = _portrait.texture != null
-	_text.text = text
+	_text.text = KeyBindings.fill(text)
 	_text.visible_characters = 0
 	_chars = 0.0
 	_line_time = 0.0

@@ -163,6 +163,15 @@ var special_names: Array = SPECIAL_NAMES
 var allow_suit_toggle: bool = true
 var _regen_acc: float = 0.0
 var _armor_cd: float = 0.0
+## Fighting-game layer (versus): buffs/debuffs, class, 5-hit chain, boosts and a forced pose (intro / victory)
+var effects: FightEffects = null
+var long_combo: bool = false
+var boost_attack: float = 1.0
+var boost_defense: float = 1.0
+var boost_crit: float = 0.0
+var _forced_anim: String = ""
+var _punch_released: bool = false     # J let go since the jab started: a later press chains, it is not a heavy hold
+var _forced_t: float = 0.0
 
 # Buffered One-Shot Action Flags & Edge-Detection State
 # Captures both _input() hardware events AND Input.action_press() calls from on-screen buttons
@@ -480,7 +489,12 @@ func _update_cooldowns(delta: float) -> void:
 		_dodge_cd = max(0.0, _dodge_cd - delta)
 	if _armor_cd > 0.0:
 		_armor_cd -= delta
-	if passive == "regen" and current_state != State.DEFEATED and health_component.current_health < health_component.max_health:
+	if _forced_t > 0.0:
+		_forced_t -= delta
+		if _forced_t <= 0.0:
+			_forced_anim = ""
+	if passive == "regen" and current_state != State.DEFEATED and health_component.current_health < health_component.max_health \
+			and (effects == null or not effects.heals_blocked()):
 		_regen_acc += delta * 1.6
 		if _regen_acc >= 1.0:
 			_regen_acc -= 1.0
@@ -780,7 +794,9 @@ func _state_attacking(delta: float) -> void:
 	_attack_elapsed += delta
 
 	# Hold the punch button through the jab to wind up a guard-breaking heavy attack
-	if _pending_attack_id == "jab_1" and not _heavy_converted and _attack_elapsed >= HEAVY_HOLD_TIME and _held("attack_punch"):
+	if not _held("attack_punch"):
+		_punch_released = true
+	if _pending_attack_id == "jab_1" and not _heavy_converted and not _punch_released and _attack_elapsed >= HEAVY_HOLD_TIME and _held("attack_punch"):
 		_heavy_converted = true
 		_start_melee_attack(5)
 		return
@@ -797,11 +813,12 @@ func _state_attacking(delta: float) -> void:
 		if not melee_hitbox.is_active:
 			melee_hitbox.position = Vector2(facing_dir * 16.0, -2.0)
 			var suit_bonus := 4 if is_dark_suit else 0
-			var dmg := (_pending_damage + suit_bonus) * damage_mult
+			var dmg := (_pending_damage + suit_bonus) * damage_mult * out_mult()
 			if passive == "heavy" and _pending_attack_id == "heavy":
 				dmg *= 1.35
-			if passive == "crit" and randf() < 0.18:
+			if randf() < crit_chance():
 				dmg *= 1.6
+				stats["crits"] = int(stats.get("crits", 0)) + 1
 				Fx.popup_text(get_parent(), global_position + Vector2(0, -40), "CRIT!", Color(1, 0.4, 0.3), 10)
 			melee_hitbox.activate(int(round(dmg)), _pending_kb, facing_dir, _pending_attack_id, _pending_stun + (0.35 if passive == "venom" else 0.0))
 	else:
@@ -810,6 +827,9 @@ func _state_attacking(delta: float) -> void:
 
 	# Allow queuing next chained combo step during the back half of current attack
 	if _attack_elapsed >= _attack_hitbox_start:
+		if long_combo and _combo_step in [1, 2, 7, 8] and (_is_punch_just_pressed() or _is_kick_just_pressed()):
+			_start_melee_attack(_next_combo_step(_combo_step))
+			return
 		if _is_punch_just_pressed() and _combo_step == 1:
 			_start_melee_attack(2)
 			return
@@ -848,7 +868,7 @@ func _run_hit_schedule() -> void:
 			var centered: bool = w.size() > 6 and bool(w[6])
 			melee_hitbox.position = Vector2(0.0 if centered else facing_dir * 18.0, -3.0)
 			_pending_attack_id = String(w[5])
-			melee_hitbox.activate(int(round(float(w[2]) * damage_mult)), w[3], facing_dir, String(w[5]), float(w[4]))
+			melee_hitbox.activate(int(round(float(w[2]) * damage_mult * out_mult())), w[3], facing_dir, String(w[5]), float(w[4]))
 			if String(w[5]) == "sp3_final":
 				sprite.play("sp_uppercut", true)
 				velocity = Vector2(facing_dir * 40.0, -150.0)
@@ -931,14 +951,16 @@ func _check_combat_or_web_inputs() -> bool:
 	# 1. Punch / Chained Combo ('J')
 	if _is_punch_just_pressed():
 		var next_step := 1
-		if _combo_reset_timer > 0.0 and _combo_step in [1, 2]:
-			next_step = _combo_step + 1
+		if _combo_reset_timer > 0.0 and _combo_step in ([1, 2, 7, 8] if long_combo else [1, 2]):
+			next_step = _next_combo_step(_combo_step)
 		_start_melee_attack(next_step)
 		return true
 
 	# 2. Kick ('H')
 	if _is_kick_just_pressed():
 		var kick_step := 3 if (_combo_reset_timer > 0.0 and _combo_step >= 1) else 0
+		if long_combo and _combo_reset_timer > 0.0 and _combo_step in [1, 2, 7, 8]:
+			kick_step = _next_combo_step(_combo_step)
 		_start_melee_attack(kick_step)
 		return true
 
@@ -1013,7 +1035,7 @@ func _start_melee_attack(step: int) -> void:
 		velocity.x = facing_dir * 135.0
 		_play_sfx(sfx_kick)
 		_trigger_particles(Color(1.0, 0.85, 0.25, 1.0))
-		combo_updated.emit(3, "3-HIT FINISHER!")
+		combo_updated.emit(3, "5-HIT COMBO!" if long_combo else "3-HIT FINISHER!")
 		_combo_step = 0
 	elif step == 4:
 		# Dash strike: punch out of a dodge closes distance like a fighting-game dash attack
@@ -1041,6 +1063,30 @@ func _start_melee_attack(step: int) -> void:
 		Audio.play_sfx("whoosh", 0.8)
 		combo_updated.emit(2, "HEAVY STRIKE!")
 		_combo_step = 0
+	elif step == 7:
+		# 5-hit chain, hit 3: hook
+		_pending_damage = 18
+		_pending_kb = Vector2(140.0, -55.0)
+		_pending_attack_id = "hook_3"
+		_pending_stun = 0.28
+		_attack_timer = 0.25
+		_attack_hitbox_start = 0.05
+		_attack_hitbox_end = 0.18
+		velocity.x = facing_dir * 90.0
+		_play_sfx(sfx_punch)
+		combo_updated.emit(2, "HOOK!")
+	elif step == 8:
+		# 5-hit chain, hit 4: roundhouse
+		_pending_damage = 20
+		_pending_kb = Vector2(150.0, -70.0)
+		_pending_attack_id = "roundhouse_4"
+		_pending_stun = 0.3
+		_attack_timer = 0.28
+		_attack_hitbox_start = 0.06
+		_attack_hitbox_end = 0.2
+		velocity.x = facing_dir * 100.0
+		_play_sfx(sfx_kick)
+		combo_updated.emit(2, "ROUNDHOUSE!")
 	else:
 		# Standalone Acrobatic Kick ('H')
 		_pending_damage = 20
@@ -1056,6 +1102,7 @@ func _start_melee_attack(step: int) -> void:
 
 	if step != 5:
 		_heavy_converted = false
+	_punch_released = false
 	_hit_schedule = []
 	_hit_window = -1
 	melee_hitbox.scale = Vector2.ONE
@@ -1069,7 +1116,11 @@ func _start_melee_attack(step: int) -> void:
 func _start_special(level: int) -> void:
 	set_meter(power_meter - level * 100.0)
 	stats["specials"] = int(stats.get("specials", 0)) + 1
+	if level == 3:
+		stats["sp3"] = int(stats.get("sp3", 0)) + 1
 	special_performed.emit(level, String(special_names[level]))
+	if level == 1 and effects != null:
+		effects.apply(String(SpiderRoster.SIG.get(character_key, ["bleed", "fury"])[1]), 7.0)
 	if level == 1:
 		if sp_style == "blast":
 			_fire_power_blast()
@@ -1260,8 +1311,9 @@ func apply_combat_hit(damage: int, knockback: Vector2, attack_type: String = "en
 
 ## Guard hook on the player's hurtbox: block (chip damage), timed parry (cancel + stun attacker).
 func _guard_hit(damage: int, knockback: Vector2, attack_type: String, attacker: Node) -> int:
+	var in_mult := incoming_mult(attacker)
 	if current_state != State.BLOCKING:
-		var d := damage * defense_mult
+		var d := damage * defense_mult * in_mult
 		if passive == "armor" and _armor_cd <= 0.0:
 			_armor_cd = 6.0
 			d *= 0.5
@@ -1290,7 +1342,7 @@ func _guard_hit(damage: int, knockback: Vector2, attack_type: String, attacker: 
 	add_meter(5.0)
 	_blocked_hit = true
 	Fx.burst(get_parent(), global_position + Vector2(facing_dir * 10.0, -6.0), Color(0.8, 0.9, 1.0), 6, 70.0, 0.0, 0.2)
-	return maxi(1, int(round(damage * BLOCK_CHIP)))
+	return maxi(1, int(round(damage * BLOCK_CHIP * in_mult)))
 
 
 func _on_damaged(_amount: int, knockback: Vector2, _source_type: String) -> void:
@@ -1341,10 +1393,12 @@ func _on_melee_hit_landed(target: Node, damage_dealt: int, attack_id: String) ->
 	stats["damage_dealt"] = int(stats.get("damage_dealt", 0)) + damage_dealt
 	if not attack_id.begins_with("sp") and attack_id != "web_slam_special":
 		add_meter(7.0)
-	if passive == "lifesteal":
+	if effects != null:
+		_trigger_abilities(target, attack_id)
+	if passive == "lifesteal" and (effects == null or not effects.heals_blocked()):
 		health_component.current_health = mini(health_component.max_health, health_component.current_health + maxi(1, damage_dealt / 8))
 		health_component.health_changed.emit(health_component.current_health, health_component.max_health)
-	var heavy := attack_id in ["spider_finisher", "web_slam_special", "kick", "heavy", "sp3_final", "dash_strike"]
+	var heavy := attack_id in ["spider_finisher", "web_slam_special", "kick", "heavy", "sp3_final", "dash_strike", "roundhouse_4"]
 	Fx.hitstop(0.075 if heavy else 0.045)
 	Fx.shake(3.5 if heavy else 2.0, 0.14)
 	Audio.play_sfx("heavy_hit" if heavy else "hit", 0.9)
@@ -1417,7 +1471,8 @@ func _on_hard_landing(impact_speed: float) -> void:
 
 const _ATTACK_ANIMS: Dictionary = {
 	"jab_1": "jab", "cross_2": "cross", "spider_finisher": "finisher", "kick": "kick", "web_slam_special": "slam",
-	"heavy": "heavy", "dash_strike": "cross", "sp2_whirl": "sp_whirl", "sp3_flurry": "sp_flurry", "sp3_final": "sp_uppercut"
+	"heavy": "heavy", "dash_strike": "cross", "sp2_whirl": "sp_whirl", "sp3_flurry": "sp_flurry", "sp3_final": "sp_uppercut",
+	"hook_3": "hook", "roundhouse_4": "roundhouse"
 }
 
 
@@ -1429,7 +1484,7 @@ func _update_sprite_animation() -> void:
 	var anim := "idle"
 	match current_state:
 		State.IDLE:
-			anim = "idle"
+			anim = "stance" if long_combo and sprite.has_anim("stance") else "idle"
 		State.RUNNING:
 			anim = "run"
 			sprite.speed_scale = clampf(absf(velocity.x) / MAX_RUN_SPEED, 0.45, 1.25)
@@ -1442,7 +1497,7 @@ func _update_sprite_animation() -> void:
 		State.CEILING_CRAWLING:
 			anim = "ceiling_crawl"
 			sprite.speed_scale = 1.0 if absf(velocity.x) > 5.0 else 0.0
-			sprite.offset = Vector2(0, 15.0 / maxf(0.01, sprite.scale.y))
+			sprite.offset = Vector2(0, 12.0 / maxf(0.01, sprite.scale.y))  # flipped crawl art: hands and feet touch the ceiling
 		State.WEB_SWINGING:
 			anim = "swing"
 		State.ATTACKING:
@@ -1460,6 +1515,8 @@ func _update_sprite_animation() -> void:
 	# Short overlay actions (web shot, throw, landing, parry) only replace calm poses
 	if _oneshot_anim != "" and current_state in [State.IDLE, State.RUNNING, State.JUMPING, State.FALLING, State.BLOCKING]:
 		anim = _oneshot_anim
+	if _forced_anim != "" and current_state in [State.IDLE, State.RUNNING, State.FALLING] and sprite.has_anim(_forced_anim):
+		anim = _forced_anim
 	sprite.play(anim)
 
 
@@ -1498,6 +1555,8 @@ func _state_blocking(delta: float) -> void:
 func apply_parry_stun(duration: float) -> void:
 	if current_state == State.DEFEATED:
 		return
+	if effects != null:
+		effects.apply("stun", duration)
 	melee_hitbox.deactivate()
 	_hit_schedule = []
 	velocity = Vector2(-facing_dir * 80.0, -40.0)
@@ -1553,7 +1612,8 @@ func _set_hit_counter(n: int) -> void:
 
 
 func reset_stats() -> void:
-	stats = {"hits": 0, "max_combo": 0, "parries": 0, "blocks": 0, "damage_taken": 0, "damage_dealt": 0, "specials": 0}
+	stats = {"hits": 0, "max_combo": 0, "parries": 0, "blocks": 0, "damage_taken": 0, "damage_dealt": 0, "specials": 0,
+		"five_hit": 0, "debuffs": 0, "crits": 0, "sp3": 0}
 
 
 ## Permanent upgrades bought with tokens (see GameState.UPGRADES).
@@ -1593,12 +1653,72 @@ func setup_fighter(key: String, info: Dictionary, p_team: int) -> void:
 	sprite.setup(String(info["sheet"]), FEET_Y)
 	if passive == "evasion":
 		health_component.invulnerability_duration = maxf(0.2, health_component.invulnerability_duration)
+	if effects == null:
+		effects = FightEffects.new(self)
+		add_child(effects)
+	effects.clear()
+	long_combo = true
 	if p_team == 2:
 		collision_layer = 4
 		hurtbox.collision_layer = 4
 		melee_hitbox.collision_layer = 16
 		melee_hitbox.collision_mask = 2
 	(get_node("Camera2D") as Camera2D).enabled = false
+
+
+func _next_combo_step(step: int) -> int:
+	if long_combo:
+		return {1: 2, 2: 7, 7: 8, 8: 3}.get(step, 1)
+	return {1: 2, 2: 3}.get(step, 1)
+
+
+## Outgoing damage multiplier from buffs (Fury, Weakness) and pre-fight boosts.
+func out_mult() -> float:
+	return boost_attack * (effects.attack_mult() if effects != null else 1.0)
+
+
+func crit_chance() -> float:
+	return (0.18 if passive == "crit" else 0.0) + boost_crit + (effects.crit_bonus() if effects != null else 0.0)
+
+
+## Incoming damage multiplier: Armor Up / Armor Break, defense boosts and the class triangle.
+func incoming_mult(attacker: Node) -> float:
+	var m := boost_defense
+	if effects != null:
+		m *= effects.defense_mult()
+	var a := attacker as PlayerController
+	if a != null and a.character_key != "" and character_key != "":
+		m *= SpiderRoster.class_mult(a.character_key, character_key)
+	return m
+
+
+## Signature abilities: the 5th chain hit grants Fury, heavies and SP2 inflict the fighter's signature
+## debuff, SP3's final blow breaks armour.
+func _trigger_abilities(target: Node, attack_id: String) -> void:
+	var foe := target as PlayerController
+	var sig: Array = SpiderRoster.SIG.get(character_key, ["bleed", "fury"])
+	match attack_id:
+		"spider_finisher":
+			if long_combo:
+				effects.apply("fury", 7.0)
+				add_meter(15.0)
+				stats["five_hit"] = int(stats.get("five_hit", 0)) + 1
+		"heavy":
+			if foe != null and foe.effects != null:
+				foe.effects.apply(String(sig[0]), 6.0, self)
+		"sp2_whirl":
+			if foe != null and foe.effects != null and _hit_window == _hit_schedule.size() - 1:
+				foe.effects.apply(String(sig[0]), 8.0, self)
+		"sp3_final":
+			if foe != null and foe.effects != null:
+				foe.effects.apply("armor_break", 8.0, self)
+			effects.apply("fury", 8.0)
+
+
+## Hold a pose (intro, victory) while idle; ends after `seconds` or when the fighter acts.
+func play_forced(anim: String, seconds: float) -> void:
+	_forced_anim = anim
+	_forced_t = seconds
 
 
 func _set_projectile_team(proj: Area2D) -> void:

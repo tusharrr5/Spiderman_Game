@@ -85,10 +85,10 @@ static func _level_1() -> Dictionary:
 		"triggers": [
 			{"x": 30, "dialogue": [["captain", "Night patrol, this is Captain Reyes. A gang is shaking down shop owners on 41st."],
 				["hero", "On it, Captain. Nothing says 'good evening' like a surprise visit."],
-				["hint", "A/D or Arrows to run, SPACE to jump. Hold W + SPACE for a SUPER JUMP."]]},
-			{"x": 300, "dialogue": [["hint", "J punches (tap 3x for a combo), H kicks, SHIFT dodges through attacks."]]},
-			{"x": 880, "dialogue": [["hint", "Walls are no problem: run into the wall or hold W to climb. Fire escapes help too."]]},
-			{"x": 1430, "dialogue": [["hero", "That gap's too wide to jump..."], ["hint", "Jump off the edge, then press K near a gargoyle anchor to WEB SWING. Press SPACE to let go."]]},
+				["hint", "{move} to run, {jump} to jump. Hold {up} + {jump} for a SUPER JUMP."]]},
+			{"x": 300, "dialogue": [["hint", "{punch} punches (tap it for a combo), {kick} kicks, {dodge} dodges through attacks."]]},
+			{"x": 880, "dialogue": [["hint", "Walls are no problem: run into the wall or hold {up} to climb. Fire escapes help too."]]},
+			{"x": 1430, "dialogue": [["hero", "That gap's too wide to jump..."], ["hint", "Jump off the edge, then press {web} near a gargoyle anchor to WEB SWING. Press {jump} to let go."]]},
 			{"x": 1760, "dialogue": [["hero", "There's the rest of the crew."], ["hint", "L yanks the nearest crate with a web and hurls it. No crate nearby? L does a WEB SLAM."]]},
 			{"x": 2440, "dialogue": [["brick", "You're the bug who keeps ruining my collections?"], ["hero", "Collections? Is that what we're calling it now?"],
 				["brick", "Get him!"]]},
@@ -144,7 +144,7 @@ static func _level_2() -> Dictionary:
 		"triggers": [
 			{"x": 30, "dialogue": [["captain", "Break-in at Halvorsen Labs! The suspect is running across the roofs - he's fast."],
 				["thief", "Catch me if you can, bug!"], ["hero", "Oh, you did NOT just say that."]]},
-			{"x": 700, "dialogue": [["hint", "Gaps too wide? Swing! Gunners telegraph with a red sight line - DODGE (SHIFT) through bullets."]]},
+			{"x": 700, "dialogue": [["hint", "Gaps too wide? Swing! Gunners telegraph with a red sight line - DODGE ({dodge}) through bullets."]]},
 			{"x": 2040, "dialogue": [["hero", "A construction site. Of course he went through a construction site."], ["hint", "Ride the crane lift or swing between the girders."]]},
 			{"x": 3640, "dialogue": [["thief", "End of the line... for YOU."], ["hero", "That's my line! Get your own material."]]},
 		],
@@ -259,7 +259,7 @@ static func _level_4() -> Dictionary:
 		"triggers": [
 			{"x": 30, "dialogue": [["hero", "Every bone I own still hurts... but he has MJ. Nothing else matters tonight."],
 				["mj_worried", "(radio) ...if anyone can hear this... Oscorp-style facility, east docks... please hurry..."]]},
-			{"x": 1100, "dialogue": [["hint", "Electrified corridor! Jump into the CEILING while holding W to crawl over it. S or SPACE drops you."]]},
+			{"x": 1100, "dialogue": [["hint", "Electrified corridor! Jump into the CEILING while holding {up} to crawl over it. {down} or {jump} drops you."]]},
 			{"x": 1620, "dialogue": [["hint", "An energy gate. Smash the GENERATOR (hit it 3 times) to shut it down."]]},
 			{"x": 2400, "dialogue": [["hint", "The second generator is up on the gantry. Climb the pillar."]]},
 			{"x": 2900, "dialogue": [["mj_worried", "Up here! He locked me in!"], ["hero", "Hang on, MJ - knocking first!"]]},

@@ -72,9 +72,49 @@ var versus_stats: Dictionary = {}
 var char_wins: Dictionary = {}            # roster key -> versus wins with that fighter
 var arena_tier: int = 1
 
+# ---- versus progression: pre-fight boosts, fighter levels, daily login reward, challenges
+## boost key -> [name, effect, token price, colour]
+const BOOSTS: Dictionary = {
+	"attack": ["ATTACK BOOST", "+20% attack", 90, Color(1.0, 0.4, 0.3)],
+	"defense": ["DEFENSE BOOST", "-20% damage taken", 90, Color(0.5, 0.75, 1.0)],
+	"power": ["POWER BOOST", "+1 power bar at the start, +25% power gain", 110, Color(0.35, 0.85, 1.0)],
+	"crit": ["CRIT BOOST", "+15% critical hit chance", 100, Color(1.0, 0.85, 0.3)],
+	"health": ["HEALTH BOOST", "+20% max health", 100, Color(0.4, 1.0, 0.5)],
+}
+const MAX_BOOSTS_PER_FIGHT: int = 2
+const FIGHTER_MAX_LEVEL: int = 10
+const XP_PER_LEVEL: int = 100
+## [id, title, counter, target, token reward]
+const CHALLENGES: Array = [
+	["win1", "First blood: win a versus match", "vs_wins", 1, 50],
+	["win10", "Contender: win 10 versus matches", "vs_wins", 10, 200],
+	["win50", "Champion: win 50 versus matches", "vs_wins", 50, 800],
+	["team5", "Squad goals: win 5 matches in 3 VS 3", "team_wins", 5, 250],
+	["hard1", "Bot breaker: beat MORE DIFFICULT", "wins_more_difficult", 1, 300],
+	["hard10", "Unstoppable: beat MORE DIFFICULT 10 times", "wins_more_difficult", 10, 1000],
+	["parry25", "Spider-sense: parry 25 attacks", "parries", 25, 150],
+	["parry100", "Untouchable: parry 100 attacks", "parries", 100, 500],
+	["combo20", "Five-hit hero: land 20 five-hit combos", "five_hit", 20, 200],
+	["sp3_10", "Maximum power: land 10 level-3 specials", "sp3", 10, 250],
+	["debuff50", "Dirty tricks: inflict 50 debuffs", "debuffs", 50, 200],
+	["perfect1", "Flawless: win a round without taking damage", "perfects", 1, 200],
+	["streak5", "On fire: reach a 5-win streak", "best_streak", 5, 300],
+	["roster10", "Multiverse: win with 10 different fighters", "fighters_won", 10, 400],
+	["level10", "Max rank: get any fighter to level 10", "max_level", 10, 500],
+]
+var boosts: Dictionary = {"attack": 1, "defense": 1}   # boost key -> count (two starter boosts)
+var fighter_xp: Dictionary = {}           # roster key -> xp
+var login_day: String = ""
+var login_streak: int = 0
+var challenge_progress: Dictionary = {}   # counter -> value
+var challenges_claimed: Array = []
+## Filled by record_versus for the results screen: xp, level-ups, boost drop, finished challenges
+var last_versus_rewards: Dictionary = {}
+
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	KeyBindings.load_and_apply()
 	_set_display_title()
 	load_game()
 
@@ -114,6 +154,12 @@ func load_game() -> void:
 	daily_streak = int(cfg.get_value("records", "daily_streak", 0))
 	versus_stats = cfg.get_value("records", "versus_stats", {})
 	char_wins = cfg.get_value("records", "char_wins", {})
+	boosts = cfg.get_value("versus", "boosts", {"attack": 1, "defense": 1})
+	fighter_xp = cfg.get_value("versus", "fighter_xp", {})
+	login_day = String(cfg.get_value("versus", "login_day", ""))
+	login_streak = int(cfg.get_value("versus", "login_streak", 0))
+	challenge_progress = cfg.get_value("versus", "challenge_progress", {})
+	challenges_claimed = cfg.get_value("versus", "challenges_claimed", [])
 
 
 func save_game() -> void:
@@ -138,6 +184,12 @@ func save_game() -> void:
 	cfg.set_value("records", "daily_streak", daily_streak)
 	cfg.set_value("records", "versus_stats", versus_stats)
 	cfg.set_value("records", "char_wins", char_wins)
+	cfg.set_value("versus", "boosts", boosts)
+	cfg.set_value("versus", "fighter_xp", fighter_xp)
+	cfg.set_value("versus", "login_day", login_day)
+	cfg.set_value("versus", "login_streak", login_streak)
+	cfg.set_value("versus", "challenge_progress", challenge_progress)
+	cfg.set_value("versus", "challenges_claimed", challenges_claimed)
 	cfg.save(save_path)
 
 
@@ -158,6 +210,12 @@ func reset_progress() -> void:
 	daily_streak = 0
 	versus_stats = {}
 	char_wins = {}
+	boosts = {"attack": 1, "defense": 1}
+	fighter_xp = {}
+	login_day = ""
+	login_streak = 0
+	challenge_progress = {}
+	challenges_claimed = []
 	save_game()
 	progress_changed.emit()
 
@@ -283,7 +341,12 @@ func goto_arena_hub() -> void:
 	_change_scene(ARENA_HUB_SCENE)
 
 
-func goto_shop() -> void:
+## The shop's BACK button returns to the screen that opened it.
+var shop_return: String = "arena"
+
+
+func goto_shop(from: String = "arena") -> void:
+	shop_return = from
 	_change_scene(SHOP_SCENE)
 
 
@@ -300,8 +363,9 @@ func start_versus(cfg: Dictionary) -> void:
 	_change_scene(VERSUS_SCENE)
 
 
-func record_versus(won: bool, difficulty: String, team: Array, _team_mode: bool) -> void:
+func record_versus(won: bool, difficulty: String, team: Array, team_mode: bool, fight_stats: Dictionary = {}) -> void:
 	var v := versus_stats
+	var rewards := {"xp": 0, "levels": [], "boost": "", "challenges": []}
 	if won:
 		v["wins"] = int(v.get("wins", 0)) + 1
 		v["streak"] = int(v.get("streak", 0)) + 1
@@ -309,10 +373,124 @@ func record_versus(won: bool, difficulty: String, team: Array, _team_mode: bool)
 		v["wins_" + difficulty] = int(v.get("wins_" + difficulty, 0)) + 1
 		for k in team:
 			char_wins[k] = int(char_wins.get(k, 0)) + 1
+		bump("vs_wins")
+		if team_mode:
+			bump("team_wins")
+		if difficulty == "more_difficult":
+			bump("wins_more_difficult")
+		# boost drop: more likely against a harder bot
+		var drop_p: float = {"easy": 0.25, "moderate": 0.4, "difficult": 0.6, "more_difficult": 0.85}.get(difficulty, 0.4)
+		if randf() < drop_p:
+			var keys := BOOSTS.keys()
+			rewards["boost"] = keys[randi() % keys.size()]
+			add_boost(String(rewards["boost"]))
 	else:
 		v["losses"] = int(v.get("losses", 0)) + 1
 		v["streak"] = 0
+	for c in ["parries", "five_hit", "sp3", "debuffs", "perfects"]:
+		if fight_stats.has(c):
+			bump(c, int(fight_stats[c]))
+	var xp := int(round((60.0 if won else 25.0) * float({"easy": 0.6, "moderate": 1.0, "difficult": 1.4, "more_difficult": 1.8}.get(difficulty, 1.0))))
+	rewards["xp"] = xp
+	for k in team:
+		var before := fighter_level(String(k))
+		fighter_xp[k] = int(fighter_xp.get(k, 0)) + xp
+		if fighter_level(String(k)) > before:
+			rewards["levels"].append([k, fighter_level(String(k))])
+	rewards["challenges"] = check_challenges()
+	last_versus_rewards = rewards
 	save_game()
+
+
+# ------------------------------------------------------------------ versus progression
+func fighter_level(key: String) -> int:
+	return mini(FIGHTER_MAX_LEVEL, 1 + int(fighter_xp.get(key, 0)) / XP_PER_LEVEL)
+
+
+## Fraction of the way to the next level (1.0 at max level).
+func fighter_level_progress(key: String) -> float:
+	if fighter_level(key) >= FIGHTER_MAX_LEVEL:
+		return 1.0
+	return float(int(fighter_xp.get(key, 0)) % XP_PER_LEVEL) / float(XP_PER_LEVEL)
+
+
+## +2% health and attack per level above 1.
+func fighter_level_bonus(key: String) -> float:
+	return 0.02 * (fighter_level(key) - 1)
+
+
+func add_boost(key: String, n: int = 1) -> void:
+	boosts[key] = int(boosts.get(key, 0)) + n
+
+
+func use_boost(key: String) -> bool:
+	if int(boosts.get(key, 0)) <= 0:
+		return false
+	boosts[key] = int(boosts[key]) - 1
+	return true
+
+
+func buy_boost(key: String) -> bool:
+	var price := int(BOOSTS[key][2])
+	if tokens < price:
+		return false
+	tokens -= price
+	add_boost(key)
+	save_game()
+	return true
+
+
+## Daily login reward: tokens grow with the streak (7-day cycle) and days 3, 5 and 7 add boosts.
+## Returns {} when today's reward was already claimed.
+func claim_daily_login() -> Dictionary:
+	var today := today_key()
+	if login_day == today:
+		return {}
+	var yesterday := Time.get_date_string_from_unix_time(Time.get_unix_time_from_system() - 86400.0)
+	login_streak = login_streak + 1 if login_day == yesterday else 1
+	login_day = today
+	var day := (login_streak - 1) % 7 + 1
+	var reward := {"day": day, "streak": login_streak, "tokens": 40 + 20 * day, "boosts": []}
+	tokens += int(reward["tokens"])
+	if day in [3, 5, 7]:
+		var keys := BOOSTS.keys()
+		for _i in range(2 if day == 7 else 1):
+			var b: String = keys[randi() % keys.size()]
+			add_boost(b)
+			reward["boosts"].append(b)
+	save_game()
+	return reward
+
+
+func bump(counter: String, n: int = 1) -> void:
+	challenge_progress[counter] = int(challenge_progress.get(counter, 0)) + n
+
+
+func challenge_value(counter: String) -> int:
+	match counter:
+		"best_streak":
+			return int(versus_stats.get("best_streak", 0))
+		"fighters_won":
+			return char_wins.size()
+		"max_level":
+			var best := 1
+			for k in fighter_xp:
+				best = maxi(best, fighter_level(String(k)))
+			return best
+	return int(challenge_progress.get(counter, 0))
+
+
+## Pays out every newly completed challenge; returns [[title, tokens], ...].
+func check_challenges() -> Array:
+	var done: Array = []
+	for c in CHALLENGES:
+		if c[0] in challenges_claimed:
+			continue
+		if challenge_value(String(c[2])) >= int(c[3]):
+			challenges_claimed.append(c[0])
+			tokens += int(c[4])
+			done.append([c[1], c[4]])
+	return done
 
 
 func start_arena(p_mode: String, p_tier: int = 1) -> void:
